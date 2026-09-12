@@ -40,11 +40,18 @@ def plot_var_backtest_diagnostics(
     portfolio: PortfolioVaR,
     lookback_window: int = 252,
     output_filename: str = "var_backtest_diagnostics.png",
-) -> Path:
-    """Plots realized portfolio returns against dynamic VaR threshold bands,
-
+) -> None:
+    """
+    Plots realized portfolio returns against dynamic VaR threshold bands,
     highlighting exception breaches to illustrate volatility clustering.
     """
+    path_obj = Path(output_filename)
+    if "data" in path_obj.parts:
+        save_path = path_obj
+    else:
+        save_path = Path("data/output") / output_filename
+
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     apply_institutional_style()
 
     # Execute dynamic backtests
@@ -114,7 +121,7 @@ def plot_var_backtest_diagnostics(
             color="crimson",
             s=22,
             zorder=5,
-            label=f"Breaches ({bt.total_exceptions} / {bt.total_observations} = {bt.empirical_rate*100:.1f}%)",
+            label=f"Breaches ({bt.total_exceptions} / {bt.total_observations} = {bt.empirical_rate * 100:.1f}%)",
         )
 
         ax.set_title(
@@ -130,10 +137,7 @@ def plot_var_backtest_diagnostics(
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
 
     plt.tight_layout()
-    output_dir = get_project_root() / "data" / "plots"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    save_path = output_dir / output_filename
-
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
     print(f"[+] Saved Backtest Diagnostics plot: {save_path}")
