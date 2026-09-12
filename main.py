@@ -1,6 +1,6 @@
 """Main entrypoint for historical VaR analysis and stress testing pipelines."""
 
-from stress_engine.portfolio import PortfolioVaR
+from stress_engine.portfolio import PortfolioVaR, export_descriptive_statistics
 
 
 def main() -> None:
@@ -127,7 +127,7 @@ def main() -> None:
         plot_var_backtest_diagnostics(
             portfolio=port,
             lookback_window=252,
-            output_filename=f"var_diagnostics_{clean_name}.png",
+            output_filename=f"data/output/var_diagnostics_{clean_name}.png",
         )
 
     # Generate 4D Monte Carlo Drawdown Surface Chart

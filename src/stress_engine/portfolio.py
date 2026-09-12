@@ -328,9 +328,10 @@ class PortfolioVaR:
 
 
 def export_descriptive_statistics(
-    portfolio_list: list, output_dir: str | Path = "data/raw"
+    portfolio_list: list, output_dir: str | Path = "data/output"
 ) -> pd.DataFrame:
-    """Computes vectorized descriptive statistics and out-of-sample exception
+    """
+    Computes vectorized descriptive statistics and out-of-sample exception
     counts for multiple portfolios, exporting the master summary to CSV
     for Week 10 MS Excel chart generation.
     """
