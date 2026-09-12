@@ -252,4 +252,4 @@ def test_export_descriptive_statistics() -> None:
     assert not df.empty
     assert "Annualized Volatility" in df.columns
     assert "FHS Breaches" in df.columns
-    assert Path("data/raw/week10_descriptive_summary.csv").exists()
+    assert Path("data/output/week10_descriptive_summary.csv").exists()
