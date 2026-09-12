@@ -10,7 +10,7 @@ from stress_engine.backtest import (
     run_full_var_backtest,
 )
 from stress_engine.monte_carlo import run_comprehensive_stress_engine
-from stress_engine.portfolio import PortfolioVaR
+from stress_engine.portfolio import PortfolioVaR, export_descriptive_statistics
 from stress_engine.volatility import compute_ewma_volatility, fit_gjr_garch
 
 # =====================================================================
@@ -224,3 +224,32 @@ def test_basel_traffic_light_regulatory_boundaries() -> None:
     red = evaluate_basel_traffic_light(exceptions=11, total_observations=250)
     assert red.zone == BaselZone.RED
     assert red.capital_multiplier == 4.00
+
+
+# =====================================================================
+# 5. EXPORT FUNCTIONALITY
+# =====================================================================
+
+
+def test_export_descriptive_statistics() -> None:
+    from pathlib import Path
+
+    import pandas as pd
+
+    from stress_engine.portfolio import PortfolioVaR
+
+    port = PortfolioVaR(
+        name="Test Portfolio",
+        tickers=["SPY", "TLT"],
+        weights=[0.6, 0.4],
+        start_date="2022-01-01",
+        end_date="2023-12-31",
+    )
+
+    df = export_descriptive_statistics([port])
+
+    assert isinstance(df, pd.DataFrame)
+    assert not df.empty
+    assert "Annualized Volatility" in df.columns
+    assert "FHS Breaches" in df.columns
+    assert Path("data/raw/week10_descriptive_summary.csv").exists()

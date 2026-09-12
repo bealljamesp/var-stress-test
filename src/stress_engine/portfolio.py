@@ -1,5 +1,7 @@
 """Portfolio Value-at-Risk (VaR) calculation and risk analysis engine."""
 
+from pathlib import Path
+
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -323,3 +325,78 @@ class PortfolioVaR:
         z_cutoff = stats.norm.ppf(alpha)
         es_loss = -mu + sigma * (stats.norm.pdf(z_cutoff) / alpha)
         return max(0.0, float(es_loss))
+
+
+def export_descriptive_statistics(
+    portfolio_list: list, output_dir: str | Path = "data/raw"
+) -> pd.DataFrame:
+    """Computes vectorized descriptive statistics and out-of-sample exception
+    counts for multiple portfolios, exporting the master summary to CSV
+    for Week 10 MS Excel chart generation.
+    """
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+
+    summary_records = []
+
+    for port in portfolio_list:
+        # Ensure data is downloaded and returns are computed if not already done
+        if port.returns is None or port.returns.empty:
+            port.run_analysis()
+
+        # Pull returns using zero-copy contiguous access
+        returns: NDArray[np.float64] = port.returns.to_numpy(
+            dtype=np.float64, copy=False
+        )
+
+        # Vectorized higher-order moments & metrics
+        mean_ret = float(np.mean(returns))
+        vol_ann = float(np.std(returns, ddof=1) * np.sqrt(252))
+
+        # Higher-order standardized moments (skewness and excess kurtosis)
+        std_dev = np.std(returns, ddof=1)
+        z_scores = (returns - mean_ret) / std_dev
+        skewness = float(np.mean(z_scores**3))
+        excess_kurtosis = float(np.mean(z_scores**4) - 3.0)
+
+        # Maximum Drawdown calculation via cumulative product vectorization
+        wealth_index = 1.0 + np.cumsum(returns)
+        peak = np.maximum.accumulate(wealth_index)
+        drawdown = (wealth_index - peak) / peak
+        max_drawdown = float(np.min(drawdown))
+
+        # Run out-of-sample backtests to capture exact breach counts[cite: 1]
+        hist_bt, _, _ = port.run_rolling_out_of_sample_backtest(
+            lookback_window=252, method="historical"
+        )
+        param_bt, _, _ = port.run_rolling_out_of_sample_backtest(
+            lookback_window=252, method="parametric"
+        )
+        ewma_bt, _, _ = port.run_ewma_out_of_sample_backtest(
+            lookback_window=252, decay_factor=0.94
+        )
+        garch_bt, _, _ = port.run_gjr_garch_out_of_sample_backtest(lookback_window=252)
+        fhs_bt, _, _ = port.run_fhs_out_of_sample_backtest(lookback_window=252)
+
+        record = {
+            "Portfolio": port.name,
+            "Observations": len(returns),
+            "Daily Mean Return": mean_ret,
+            "Annualized Volatility": vol_ann,
+            "Skewness": skewness,
+            "Excess Kurtosis": excess_kurtosis,
+            "Maximum Drawdown": max_drawdown,
+            "Hist VaR Breaches": int(hist_bt.total_exceptions),
+            "Param VaR Breaches": int(param_bt.total_exceptions),
+            "EWMA Breaches": int(ewma_bt.total_exceptions),
+            "GARCH Breaches": int(garch_bt.total_exceptions),
+            "FHS Breaches": int(fhs_bt.total_exceptions),
+        }
+        summary_records.append(record)
+
+    df_summary = pd.DataFrame(summary_records)
+    csv_path = path / "week10_descriptive_summary.csv"
+    df_summary.to_csv(csv_path, index=False)
+    print(f"[Export Complete] Descriptive statistics saved to: {csv_path}")
+
+    return df_summary

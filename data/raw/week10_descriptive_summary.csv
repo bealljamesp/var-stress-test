@@ -1,0 +1,2 @@
+Portfolio,Observations,Daily Mean Return,Annualized Volatility,Skewness,Excess Kurtosis,Maximum Drawdown,Hist VaR Breaches,Param VaR Breaches,EWMA Breaches,GARCH Breaches,FHS Breaches
+Test Portfolio,500,-0.00029442363265962774,0.19450556630909643,-0.0028514507408013545,0.5307845862369267,-0.6596258990737748,7,7,13,6,9

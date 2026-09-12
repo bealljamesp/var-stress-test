@@ -25,6 +25,9 @@ def main() -> None:
         ),
     ]
 
+    # Generate Week 10 Descriptive Analysis Table CSV for Excel
+    export_descriptive_statistics(portfolios)
+
     for port in portfolios:
         print("\n" + "=" * 65)
         print(f"PORTFOLIO: {port.name}")
