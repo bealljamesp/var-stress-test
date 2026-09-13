@@ -60,10 +60,12 @@ def main() -> None:
             f"     - Breaches:             {hist_bt.total_exceptions} / {hist_bt.total_observations} ({hist_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={hist_bt.kupiec_stat:.3f} (p={hist_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if hist_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={hist_bt.kupiec_stat:.3f} (p={hist_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if hist_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={hist_bt.christoffersen_stat:.3f} (p={hist_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if hist_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={hist_bt.christoffersen_stat:.3f} (p={hist_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if hist_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         print("  2. Rolling Parametric (Normal):")
@@ -71,10 +73,12 @@ def main() -> None:
             f"     - Breaches:             {param_bt.total_exceptions} / {param_bt.total_observations} ({param_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={param_bt.kupiec_stat:.3f} (p={param_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if param_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={param_bt.kupiec_stat:.3f} (p={param_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if param_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={param_bt.christoffersen_stat:.3f} (p={param_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if param_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={param_bt.christoffersen_stat:.3f} (p={param_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if param_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         # 3. EWMA Dynamic Volatility Out-of-Sample Backtest
@@ -87,10 +91,12 @@ def main() -> None:
             f"     - Breaches:             {ewma_bt.total_exceptions} / {ewma_bt.total_observations} ({ewma_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={ewma_bt.kupiec_stat:.3f} (p={ewma_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if ewma_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={ewma_bt.kupiec_stat:.3f} (p={ewma_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if ewma_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={ewma_bt.christoffersen_stat:.3f} (p={ewma_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if ewma_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={ewma_bt.christoffersen_stat:.3f} (p={ewma_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if ewma_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         # 4. GJR-GARCH(1,1) Asymmetric Dynamic Out-of-Sample Backtest
@@ -101,10 +107,12 @@ def main() -> None:
             f"     - Breaches:             {garch_bt.total_exceptions} / {garch_bt.total_observations} ({garch_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={garch_bt.kupiec_stat:.3f} (p={garch_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if garch_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={garch_bt.kupiec_stat:.3f} (p={garch_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if garch_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={garch_bt.christoffersen_stat:.3f} (p={garch_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if garch_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={garch_bt.christoffersen_stat:.3f} (p={garch_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if garch_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         # 5. Filtered Historical Simulation (FHS - GJR-GARCH + Empirical Tail)
@@ -115,11 +123,14 @@ def main() -> None:
             f"     - Breaches:             {fhs_bt.total_exceptions} / {fhs_bt.total_observations} ({fhs_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={fhs_bt.kupiec_stat:.3f} (p={fhs_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if fhs_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={fhs_bt.kupiec_stat:.3f} (p={fhs_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if fhs_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={fhs_bt.christoffersen_stat:.3f} (p={fhs_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if fhs_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={fhs_bt.christoffersen_stat:.3f} (p={fhs_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if fhs_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
+
         # Generate Publication-Grade Diagnostic Charts
         from stress_engine.visualization import plot_var_backtest_diagnostics
 

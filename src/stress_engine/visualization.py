@@ -80,10 +80,20 @@ def plot_var_backtest_diagnostics(
     )
 
     models = [
-        ("Rolling Historical (252-Day Window)", hist_thresholds, hist_bt, "darkorange"),
-        ("Dynamic EWMA (RiskMetrics lambda=0.94)", ewma_thresholds, ewma_bt, "navy"),
         (
-            "Filtered Historical Simulation (GJR-GARCH Tail)",
+            "Rolling Historical (252-Day Lookback | 502 OOS Days)",
+            hist_thresholds,
+            hist_bt,
+            "darkorange",
+        ),
+        (
+            "Dynamic EWMA (λ=0.94 | 252-Day Lookback | 502 OOS Days)",
+            ewma_thresholds,
+            ewma_bt,
+            "navy",
+        ),
+        (
+            "Filtered Historical Simulation (GJR-GARCH Tail | 252-Day Lookback | 502 OOS Days)",
             fhs_thresholds,
             fhs_bt,
             "forestgreen",
