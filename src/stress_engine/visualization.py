@@ -137,7 +137,7 @@ def plot_var_backtest_diagnostics(
         ax.set_title(
             f"{title} | Kupiec POF p={bt.kupiec_p_value:.4f} | Christoffersen Indep p={bt.christoffersen_p_value:.4f}",
             fontsize=10,
-            fontweight="semibold",
+            fontweight="bold",
             loc="left",
         )
         ax.set_ylabel("Daily Return / VaR")
