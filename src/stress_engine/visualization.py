@@ -54,9 +54,10 @@ def plot_var_backtest_diagnostics(
 
     # Use explicit integer/positional iloc or align with the exact index dates from portfolio returns
     # Since out-of-sample aligns with the tail end of the portfolio index past the lookback window:
-    returns = portfolio.returns.iloc[-len(hist_dates) :].to_numpy(
-        dtype=np.float64, copy=False
-    )
+    # Extract the aggregate portfolio percentage return series rather than multi-asset columns
+    returns = portfolio.returns.iloc[-len(hist_dates) :].dot(portfolio.weights)
+    if not isinstance(returns, np.ndarray):
+        returns = returns.to_numpy(dtype=np.float64, copy=False)
 
     # Create a 3-panel stacked subplot layout for granular appendix inclusion
     fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True, dpi=300)
