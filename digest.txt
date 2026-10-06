@@ -9,6 +9,9 @@ Directory structure:
     │   ├── archive/
     │   │   ├── market_data_features.parquet
     │   │   └── market_data_features_delisted.parquet
+    │   ├── output/
+    │   │   ├── main_output.ipynb
+    │   │   └── week10_descriptive_summary.csv
     │   ├── patches/
     │   │   ├── BSC.csv
     │   │   ├── CHK.csv
@@ -359,7 +362,7 @@ FILE: main.py
 ================================================
 """Main entrypoint for historical VaR analysis and stress testing pipelines."""
 
-from stress_engine.portfolio import PortfolioVaR
+from stress_engine.portfolio import PortfolioVaR, export_descriptive_statistics
 
 
 def main() -> None:
@@ -419,10 +422,12 @@ def main() -> None:
             f"     - Breaches:             {hist_bt.total_exceptions} / {hist_bt.total_observations} ({hist_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={hist_bt.kupiec_stat:.3f} (p={hist_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if hist_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={hist_bt.kupiec_stat:.3f} (p={hist_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if hist_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={hist_bt.christoffersen_stat:.3f} (p={hist_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if hist_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={hist_bt.christoffersen_stat:.3f} (p={hist_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if hist_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         print("  2. Rolling Parametric (Normal):")
@@ -430,10 +435,12 @@ def main() -> None:
             f"     - Breaches:             {param_bt.total_exceptions} / {param_bt.total_observations} ({param_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={param_bt.kupiec_stat:.3f} (p={param_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if param_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={param_bt.kupiec_stat:.3f} (p={param_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if param_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={param_bt.christoffersen_stat:.3f} (p={param_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if param_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={param_bt.christoffersen_stat:.3f} (p={param_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if param_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         # 3. EWMA Dynamic Volatility Out-of-Sample Backtest
@@ -446,10 +453,12 @@ def main() -> None:
             f"     - Breaches:             {ewma_bt.total_exceptions} / {ewma_bt.total_observations} ({ewma_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={ewma_bt.kupiec_stat:.3f} (p={ewma_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if ewma_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={ewma_bt.kupiec_stat:.3f} (p={ewma_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if ewma_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={ewma_bt.christoffersen_stat:.3f} (p={ewma_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if ewma_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={ewma_bt.christoffersen_stat:.3f} (p={ewma_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if ewma_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         # 4. GJR-GARCH(1,1) Asymmetric Dynamic Out-of-Sample Backtest
@@ -460,10 +469,12 @@ def main() -> None:
             f"     - Breaches:             {garch_bt.total_exceptions} / {garch_bt.total_observations} ({garch_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={garch_bt.kupiec_stat:.3f} (p={garch_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if garch_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={garch_bt.kupiec_stat:.3f} (p={garch_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if garch_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={garch_bt.christoffersen_stat:.3f} (p={garch_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if garch_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={garch_bt.christoffersen_stat:.3f} (p={garch_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if garch_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
         # 5. Filtered Historical Simulation (FHS - GJR-GARCH + Empirical Tail)
@@ -474,11 +485,14 @@ def main() -> None:
             f"     - Breaches:             {fhs_bt.total_exceptions} / {fhs_bt.total_observations} ({fhs_bt.empirical_rate * 100:.2f}%)"
         )
         print(
-            f"     - Kupiec POF:           LR={fhs_bt.kupiec_stat:.3f} (p={fhs_bt.kupiec_p_value:.4f}) -> {'REJECT H0' if fhs_bt.kupiec_reject else 'ACCEPT H0'}"
+            f"     - Kupiec POF:           LR={fhs_bt.kupiec_stat:.3f} (p={fhs_bt.kupiec_p_value:.4f}) -> "
+            f"{'REJECT H0 (Miscalibrated exception rate)' if fhs_bt.kupiec_reject else 'ACCEPT H0 (Accurate calibration)'}"
         )
         print(
-            f"     - Christoffersen Indep: LR={fhs_bt.christoffersen_stat:.3f} (p={fhs_bt.christoffersen_p_value:.4f}) -> {'REJECT H0' if fhs_bt.christoffersen_reject else 'ACCEPT H0'}"
+            f"     - Christoffersen Indep: LR={fhs_bt.christoffersen_stat:.3f} (p={fhs_bt.christoffersen_p_value:.4f}) -> "
+            f"{'REJECT H0 (Temporal clustering detected)' if fhs_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
+
         # Generate Publication-Grade Diagnostic Charts
         from stress_engine.visualization import plot_var_backtest_diagnostics
 
@@ -486,7 +500,7 @@ def main() -> None:
         plot_var_backtest_diagnostics(
             portfolio=port,
             lookback_window=252,
-            output_filename=f"var_diagnostics_{clean_name}.png",
+            output_filename=f"data/output/var_diagnostics_{clean_name}.png",
         )
 
     # Generate 4D Monte Carlo Drawdown Surface Chart
@@ -549,6 +563,89 @@ FILE: data/archive/market_data_features.parquet
 FILE: data/archive/market_data_features_delisted.parquet
 ================================================
 [Binary file]
+
+
+================================================
+FILE: data/output/main_output.ipynb
+================================================
+# Jupyter notebook converted to Python script.
+
+(var-stress-test) beall@JamesBSurface8:~/projects/var-stress-test$ python main.py
+[Export Complete] Descriptive statistics saved to: data/output/week10_descriptive_summary.csv
+
+=================================================================
+PORTFOLIO: 2008 Crisis - Concentrated Financials
+HORIZON:   2007-01-01 to 2009-12-31
+=================================================================
+Confidence Level:            95.0%
+  In-Sample Hist VaR:        6.30%  ($62,951.90)
+  In-Sample Param VaR:       7.46%  ($74,600.34)
+-----------------------------------------------------------------
+ROLLING OUT-OF-SAMPLE BACKTEST (252-Day Window, 502 Out-of-Sample Days):
+  1. Rolling Historical Simulation:
+     - Breaches:             46 / 502 (9.16%)
+     - Kupiec POF:           LR=14.861 (p=0.0001) -> REJECT H0
+     - Christoffersen Indep: LR=0.469 (p=0.4933) -> ACCEPT H0
+  2. Rolling Parametric (Normal):
+     - Breaches:             44 / 502 (8.76%)
+     - Kupiec POF:           LR=12.355 (p=0.0004) -> REJECT H0
+     - Christoffersen Indep: LR=0.248 (p=0.6183) -> ACCEPT H0
+  3. Dynamic EWMA (RiskMetrics lambda=0.94):
+     - Breaches:             34 / 502 (6.77%)
+     - Kupiec POF:           LR=3.005 (p=0.0830) -> ACCEPT H0
+     - Christoffersen Indep: LR=1.053 (p=0.3048) -> ACCEPT H0
+  4. Dynamic GJR-GARCH(1,1) (Asymmetric Leverage):
+     - Breaches:             34 / 502 (6.77%)
+     - Kupiec POF:           LR=3.005 (p=0.0830) -> ACCEPT H0
+     - Christoffersen Indep: LR=1.207 (p=0.2720) -> ACCEPT H0
+  5. Filtered Historical Simulation (FHS / GJR-GARCH Tail):
+     - Breaches:             37 / 502 (7.37%)
+     - Kupiec POF:           LR=5.215 (p=0.0224) -> REJECT H0
+     - Christoffersen Indep: LR=0.030 (p=0.8631) -> ACCEPT H0
+findfont: Failed to find font weight semibold, now using 700.
+[+] Saved Backtest Diagnostics plot: data/output/var_diagnostics_concentrated_financials.png
+
+=================================================================
+PORTFOLIO: 2008 Crisis - Multi-Asset Diverse
+HORIZON:   2007-01-01 to 2009-12-31
+=================================================================
+Confidence Level:            95.0%
+  In-Sample Hist VaR:        1.27%  ($12,675.20)
+  In-Sample Param VaR:       1.42%  ($14,241.73)
+-----------------------------------------------------------------
+ROLLING OUT-OF-SAMPLE BACKTEST (252-Day Window, 502 Out-of-Sample Days):
+  1. Rolling Historical Simulation:
+     - Breaches:             29 / 502 (5.78%)
+     - Kupiec POF:           LR=0.609 (p=0.4352) -> ACCEPT H0
+     - Christoffersen Indep: LR=12.102 (p=0.0005) -> REJECT H0
+  2. Rolling Parametric (Normal):
+     - Breaches:             31 / 502 (6.18%)
+     - Kupiec POF:           LR=1.363 (p=0.2431) -> ACCEPT H0
+     - Christoffersen Indep: LR=7.091 (p=0.0077) -> REJECT H0
+  3. Dynamic EWMA (RiskMetrics lambda=0.94):
+     - Breaches:             26 / 502 (5.18%)
+     - Kupiec POF:           LR=0.034 (p=0.8546) -> ACCEPT H0
+     - Christoffersen Indep: LR=0.368 (p=0.5440) -> ACCEPT H0
+  4. Dynamic GJR-GARCH(1,1) (Asymmetric Leverage):
+     - Breaches:             39 / 502 (7.77%)
+     - Kupiec POF:           LR=6.983 (p=0.0082) -> REJECT H0
+     - Christoffersen Indep: LR=0.001 (p=0.9790) -> ACCEPT H0
+  5. Filtered Historical Simulation (FHS / GJR-GARCH Tail):
+     - Breaches:             30 / 502 (5.98%)
+     - Kupiec POF:           LR=0.950 (p=0.3296) -> ACCEPT H0
+     - Christoffersen Indep: LR=0.043 (p=0.8352) -> ACCEPT H0
+[+] Saved Backtest Diagnostics plot: data/output/var_diagnostics_multi-asset_diverse.png
+[+] Saved Monte Carlo Drawdown Surface: /home/beall/projects/var-stress-test/data/plots/stress_matrix_4d_surface.png
+
+
+
+================================================
+FILE: data/output/week10_descriptive_summary.csv
+================================================
+Portfolio,Observations,Daily Mean Return,Annualized Volatility,Skewness,Excess Kurtosis,Maximum Drawdown,Hist VaR Breaches,Param VaR Breaches,EWMA Breaches,GARCH Breaches,FHS Breaches
+2008 Crisis - Concentrated Financials,754,-0.0016084404561529817,0.797286194225217,-0.1270990910493051,13.36768142029661,-8.034827810537427,46,44,34,34,37
+2008 Crisis - Multi-Asset Diverse,754,0.00019766304045092944,0.2501861152053187,-0.03468034968482995,6.300338558010271,-0.6619498804893842,29,31,26,39,30
+
 
 
 ================================================
@@ -15208,13 +15305,7 @@ FILE: research/archive/volatility.py
 ================================================
 FILE: src/stress_engine/__init__.py
 ================================================
-from stress_engine.portfolio import PortfolioVaR, export_descriptive_statistics
-
-__all__ = [
-    "PortfolioVaR",
-    "export_descriptive_statistics",
-]
-
+[Empty file]
 
 
 ================================================
@@ -16104,77 +16195,81 @@ class PortfolioVaR:
         es_loss = -mu + sigma * (stats.norm.pdf(z_cutoff) / alpha)
         return max(0.0, float(es_loss))
 
-    def export_descriptive_statistics(
-        portfolio_list: list, output_dir: str | Path = "data/raw"
-    ) -> pd.DataFrame:
-        """Computes vectorized descriptive statistics and out-of-sample exception
-        counts for multiple portfolios, exporting the master summary to CSV
-        for Week 10 MS Excel chart generation.
-        """
-        path = Path(output_dir)
-        path.mkdir(parents=True, exist_ok=True)
 
-        summary_records = []
+def export_descriptive_statistics(
+    portfolio_list: list, output_dir: str | Path = "data/output"
+) -> pd.DataFrame:
+    """
+    Computes vectorized descriptive statistics and out-of-sample exception
+    counts for multiple portfolios, exporting the master summary to CSV
+    for Week 10 MS Excel chart generation.
+    """
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
 
-        for port in portfolio_list:
-            # Pull returns using zero-copy contiguous access
-            returns: NDArray[np.float64] = port.returns.to_numpy(
-                dtype=np.float64, copy=False
-            )
+    summary_records = []
 
-            # Vectorized higher-order moments & metrics
-            mean_ret = float(np.mean(returns))
-            vol_ann = float(np.std(returns, ddof=1) * np.sqrt(252))
+    for port in portfolio_list:
+        # Ensure data is downloaded and returns are computed if not already done
+        if port.returns is None or port.returns.empty:
+            port.run_analysis()
 
-            # Higher-order standardized moments (skewness and excess kurtosis)
-            std_dev = np.std(returns, ddof=1)
-            z_scores = (returns - mean_ret) / std_dev
-            skewness = float(np.mean(z_scores**3))
-            excess_kurtosis = float(np.mean(z_scores**4) - 3.0)
+        # Pull returns using zero-copy contiguous access
+        returns: NDArray[np.float64] = port.returns.to_numpy(
+            dtype=np.float64, copy=False
+        )
 
-            # Maximum Drawdown calculation via cumulative product vectorization
-            wealth_index = 1.0 + np.cumsum(returns)
-            peak = np.maximum.accumulate(wealth_index)
-            drawdown = (wealth_index - peak) / peak
-            max_drawdown = float(np.min(drawdown))
+        # Vectorized higher-order moments & metrics
+        mean_ret = float(np.mean(returns))
+        vol_ann = float(np.std(returns, ddof=1) * np.sqrt(252))
 
-            # Run out-of-sample backtests to capture exact breach counts[cite: 1]
-            hist_bt, _, _ = port.run_rolling_out_of_sample_backtest(
-                lookback_window=252, method="historical"
-            )
-            param_bt, _, _ = port.run_rolling_out_of_sample_backtest(
-                lookback_window=252, method="parametric"
-            )
-            ewma_bt, _, _ = port.run_ewma_out_of_sample_backtest(
-                lookback_window=252, decay_factor=0.94
-            )
-            garch_bt, _, _ = port.run_gjr_garch_out_of_sample_backtest(
-                lookback_window=252
-            )
-            fhs_bt, _, _ = port.run_fhs_out_of_sample_backtest(lookback_window=252)
+        # Higher-order standardized moments (skewness and excess kurtosis)
+        std_dev = np.std(returns, ddof=1)
+        z_scores = (returns - mean_ret) / std_dev
+        skewness = float(np.mean(z_scores**3))
+        excess_kurtosis = float(np.mean(z_scores**4) - 3.0)
 
-            record = {
-                "Portfolio": port.name,
-                "Observations": len(returns),
-                "Daily Mean Return": mean_ret,
-                "Annualized Volatility": vol_ann,
-                "Skewness": skewness,
-                "Excess Kurtosis": excess_kurtosis,
-                "Maximum Drawdown": max_drawdown,
-                "Hist VaR Breaches": int(hist_bt.total_exceptions),
-                "Param VaR Breaches": int(param_bt.total_exceptions),
-                "EWMA Breaches": int(ewma_bt.total_exceptions),
-                "GARCH Breaches": int(garch_bt.total_exceptions),
-                "FHS Breaches": int(fhs_bt.total_exceptions),
-            }
-            summary_records.append(record)
+        # Maximum Drawdown calculation via cumulative product vectorization
+        wealth_index = 1.0 + np.cumsum(returns)
+        peak = np.maximum.accumulate(wealth_index)
+        drawdown = (wealth_index - peak) / peak
+        max_drawdown = float(np.min(drawdown))
 
-        df_summary = pd.DataFrame(summary_records)
-        csv_path = path / "week10_descriptive_summary.csv"
-        df_summary.to_csv(csv_path, index=False)
-        print(f"[Export Complete] Descriptive statistics saved to: {csv_path}")
+        # Run out-of-sample backtests to capture exact breach counts[cite: 1]
+        hist_bt, _, _ = port.run_rolling_out_of_sample_backtest(
+            lookback_window=252, method="historical"
+        )
+        param_bt, _, _ = port.run_rolling_out_of_sample_backtest(
+            lookback_window=252, method="parametric"
+        )
+        ewma_bt, _, _ = port.run_ewma_out_of_sample_backtest(
+            lookback_window=252, decay_factor=0.94
+        )
+        garch_bt, _, _ = port.run_gjr_garch_out_of_sample_backtest(lookback_window=252)
+        fhs_bt, _, _ = port.run_fhs_out_of_sample_backtest(lookback_window=252)
 
-        return df_summary
+        record = {
+            "Portfolio": port.name,
+            "Observations": len(returns),
+            "Daily Mean Return": mean_ret,
+            "Annualized Volatility": vol_ann,
+            "Skewness": skewness,
+            "Excess Kurtosis": excess_kurtosis,
+            "Maximum Drawdown": max_drawdown,
+            "Hist VaR Breaches": int(hist_bt.total_exceptions),
+            "Param VaR Breaches": int(param_bt.total_exceptions),
+            "EWMA Breaches": int(ewma_bt.total_exceptions),
+            "GARCH Breaches": int(garch_bt.total_exceptions),
+            "FHS Breaches": int(fhs_bt.total_exceptions),
+        }
+        summary_records.append(record)
+
+    df_summary = pd.DataFrame(summary_records)
+    csv_path = path / "week10_descriptive_summary.csv"
+    df_summary.to_csv(csv_path, index=False)
+    print(f"[Export Complete] Descriptive statistics saved to: {csv_path}")
+
+    return df_summary
 
 
 
@@ -16223,11 +16318,18 @@ def plot_var_backtest_diagnostics(
     portfolio: PortfolioVaR,
     lookback_window: int = 252,
     output_filename: str = "var_backtest_diagnostics.png",
-) -> Path:
-    """Plots realized portfolio returns against dynamic VaR threshold bands,
-
+) -> None:
+    """
+    Plots realized portfolio returns against dynamic VaR threshold bands,
     highlighting exception breaches to illustrate volatility clustering.
     """
+    path_obj = Path(output_filename)
+    if "data" in path_obj.parts:
+        save_path = path_obj
+    else:
+        save_path = Path("data/output") / output_filename
+
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     apply_institutional_style()
 
     # Execute dynamic backtests
@@ -16256,10 +16358,20 @@ def plot_var_backtest_diagnostics(
     )
 
     models = [
-        ("Rolling Historical (252-Day Window)", hist_thresholds, hist_bt, "darkorange"),
-        ("Dynamic EWMA (RiskMetrics lambda=0.94)", ewma_thresholds, ewma_bt, "navy"),
         (
-            "Filtered Historical Simulation (GJR-GARCH Tail)",
+            "Rolling Historical (252-Day Lookback | 502 OOS Days)",
+            hist_thresholds,
+            hist_bt,
+            "darkorange",
+        ),
+        (
+            "Dynamic EWMA (λ=0.94 | 252-Day Lookback | 502 OOS Days)",
+            ewma_thresholds,
+            ewma_bt,
+            "navy",
+        ),
+        (
+            "Filtered Historical Simulation (GJR-GARCH Tail | 252-Day Lookback | 502 OOS Days)",
             fhs_thresholds,
             fhs_bt,
             "forestgreen",
@@ -16297,13 +16409,13 @@ def plot_var_backtest_diagnostics(
             color="crimson",
             s=22,
             zorder=5,
-            label=f"Breaches ({bt.total_exceptions} / {bt.total_observations} = {bt.empirical_rate*100:.1f}%)",
+            label=f"Breaches ({bt.total_exceptions} / {bt.total_observations} = {bt.empirical_rate * 100:.1f}%)",
         )
 
         ax.set_title(
             f"{title} | Kupiec POF p={bt.kupiec_p_value:.4f} | Christoffersen Indep p={bt.christoffersen_p_value:.4f}",
             fontsize=10,
-            fontweight="semibold",
+            fontweight="bold",
             loc="left",
         )
         ax.set_ylabel("Daily Return / VaR")
@@ -16313,10 +16425,7 @@ def plot_var_backtest_diagnostics(
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
 
     plt.tight_layout()
-    output_dir = get_project_root() / "data" / "plots"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    save_path = output_dir / output_filename
-
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_path, bbox_inches="tight")
     plt.close()
     print(f"[+] Saved Backtest Diagnostics plot: {save_path}")
@@ -16784,7 +16893,7 @@ def test_export_descriptive_statistics() -> None:
         name="Test Portfolio",
         tickers=["SPY", "TLT"],
         weights=[0.6, 0.4],
-        start_date="2023-01-01",
+        start_date="2022-01-01",
         end_date="2023-12-31",
     )
 
@@ -16794,7 +16903,7 @@ def test_export_descriptive_statistics() -> None:
     assert not df.empty
     assert "Annualized Volatility" in df.columns
     assert "FHS Breaches" in df.columns
-    assert Path("data/raw/week10_descriptive_summary.csv").exists()
+    assert Path("data/output/week10_descriptive_summary.csv").exists()
 
 
 
