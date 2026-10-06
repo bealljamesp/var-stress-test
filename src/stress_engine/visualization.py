@@ -38,24 +38,23 @@ def plot_var_backtest_diagnostics(
     path = Path(output_filename)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Run backtests to gather data series (unpacking backtest result, dates array, var array)
-    hist_bt, hist_dates, hist_var = portfolio.run_rolling_out_of_sample_backtest(
+    # Run backtests to gather data series
+    hist_bt, _, hist_var = portfolio.run_rolling_out_of_sample_backtest(
         lookback_window=lookback_window, method="historical"
     )
-    ewma_bt, ewma_dates, ewma_var = portfolio.run_ewma_out_of_sample_backtest(
+    ewma_bt, _, ewma_var = portfolio.run_ewma_out_of_sample_backtest(
         lookback_window=lookback_window, decay_factor=0.94
     )
-    garch_bt, garch_dates, garch_var = portfolio.run_gjr_garch_out_of_sample_backtest(
+    garch_bt, _, garch_var = portfolio.run_gjr_garch_out_of_sample_backtest(
         lookback_window=lookback_window
     )
-    fhs_bt, fhs_dates, fhs_var = portfolio.run_fhs_out_of_sample_backtest(
+    fhs_bt, _, fhs_var = portfolio.run_fhs_out_of_sample_backtest(
         lookback_window=lookback_window
     )
 
-    # Use explicit integer/positional iloc or align with the exact index dates from portfolio returns
-    # Since out-of-sample aligns with the tail end of the portfolio index past the lookback window:
-    # Extract the aggregate portfolio percentage return series rather than multi-asset columns
-    returns = portfolio.returns.iloc[-len(hist_dates) :].dot(portfolio.weights)
+    # Extract the exact out-of-sample datetime index and aggregate portfolio returns
+    out_of_sample_dates = portfolio.returns.index[-len(hist_var) :]
+    returns = portfolio.returns.iloc[-len(hist_var) :].dot(portfolio.weights)
     if not isinstance(returns, np.ndarray):
         returns = returns.to_numpy(dtype=np.float64, copy=False)
 
@@ -65,7 +64,7 @@ def plot_var_backtest_diagnostics(
     # Panel 1: Static Rolling Historical vs Returns & Breaches
     ax1 = axes[0]
     ax1.plot(
-        hist_dates,
+        out_of_sample_dates,
         returns * 100,
         color="#7f8c8d",
         alpha=0.6,
@@ -73,17 +72,16 @@ def plot_var_backtest_diagnostics(
         label="Daily Returns (%)",
     )
     ax1.plot(
-        hist_dates,
+        out_of_sample_dates,
         -hist_var * 100,
         color="#e67e22",
         lw=1.5,
         label="Rolling Historical VaR (95%)",
     )
-    # Compute breach mask directly from returns and VaR series
     breach_mask_hist = returns < -hist_var
     if np.any(breach_mask_hist):
         ax1.scatter(
-            np.array(hist_dates)[breach_mask_hist],
+            out_of_sample_dates[breach_mask_hist],
             returns[breach_mask_hist] * 100,
             color="#c0392b",
             s=25,
@@ -102,7 +100,7 @@ def plot_var_backtest_diagnostics(
     # Panel 2: Dynamic EWMA & GJR-GARCH Conditional Volatility Models
     ax2 = axes[1]
     ax2.plot(
-        ewma_dates,
+        out_of_sample_dates,
         returns * 100,
         color="#7f8c8d",
         alpha=0.4,
@@ -110,14 +108,14 @@ def plot_var_backtest_diagnostics(
         label="_nolegend_",
     )
     ax2.plot(
-        ewma_dates,
+        out_of_sample_dates,
         -ewma_var * 100,
         color="#2980b9",
         lw=1.5,
         label="Dynamic EWMA VaR (lambda=0.94)",
     )
     ax2.plot(
-        garch_dates,
+        out_of_sample_dates,
         -garch_var * 100,
         color="#8e44ad",
         lw=1.5,
@@ -127,7 +125,7 @@ def plot_var_backtest_diagnostics(
     breach_mask_ewma = returns < -ewma_var
     if np.any(breach_mask_ewma):
         ax2.scatter(
-            np.array(ewma_dates)[breach_mask_ewma],
+            out_of_sample_dates[breach_mask_ewma],
             returns[breach_mask_ewma] * 100,
             color="#c0392b",
             s=25,
@@ -146,7 +144,7 @@ def plot_var_backtest_diagnostics(
     # Panel 3: Filtered Historical Simulation (FHS) Hybrid Model
     ax3 = axes[2]
     ax3.plot(
-        fhs_dates,
+        out_of_sample_dates,
         returns * 100,
         color="#7f8c8d",
         alpha=0.4,
@@ -154,7 +152,7 @@ def plot_var_backtest_diagnostics(
         label="_nolegend_",
     )
     ax3.plot(
-        fhs_dates,
+        out_of_sample_dates,
         -fhs_var * 100,
         color="#27ae60",
         lw=1.5,
@@ -163,7 +161,7 @@ def plot_var_backtest_diagnostics(
     breach_mask_fhs = returns < -fhs_var
     if np.any(breach_mask_fhs):
         ax3.scatter(
-            np.array(fhs_dates)[breach_mask_fhs],
+            out_of_sample_dates[breach_mask_fhs],
             returns[breach_mask_fhs] * 100,
             color="#c0392b",
             s=25,
@@ -195,16 +193,12 @@ def plot_monte_carlo_drawdown_surface(
     path = Path(output_filename)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Placeholder/mock tensor structure simulation for surface plotting if master tensor is absent
     fig = plt.figure(figsize=(10, 8), dpi=300)
     ax = fig.add_subplot(projection="3d")
 
-    # Sample grid coordinates representing volatility tiers and shock magnitudes
     vol_grid = np.array([0.10, 0.20, 0.35])
     shock_grid = np.array([-0.15, -0.30, -0.50])
     vols, shocks = np.meshgrid(vol_grid, shock_grid)
-
-    # Representative distress probability surface response
     distress_prob = 1.0 / (1.0 + np.exp(-(vols * 10.0 + shocks * 5.0)))
 
     surf = ax.plot_surface(
