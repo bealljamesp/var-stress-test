@@ -73,12 +73,12 @@ def plot_var_backtest_diagnostics(
     )
     ax1.plot(
         out_of_sample_dates,
-        -hist_var * 100,
+        hist_var * 100,
         color="#e67e22",
         lw=1.5,
         label="Rolling Historical VaR (95%)",
     )
-    breach_mask_hist = returns < -hist_var
+    breach_mask_hist = returns < hist_var
     if np.any(breach_mask_hist):
         ax1.scatter(
             out_of_sample_dates[breach_mask_hist],
@@ -109,20 +109,20 @@ def plot_var_backtest_diagnostics(
     )
     ax2.plot(
         out_of_sample_dates,
-        -ewma_var * 100,
+        ewma_var * 100,
         color="#2980b9",
         lw=1.5,
         label="Dynamic EWMA VaR (lambda=0.94)",
     )
     ax2.plot(
         out_of_sample_dates,
-        -garch_var * 100,
+        garch_var * 100,
         color="#8e44ad",
         lw=1.5,
         linestyle="-.",
         label="GJR-GARCH(1,1) VaR",
     )
-    breach_mask_ewma = returns < -ewma_var
+    breach_mask_ewma = returns < ewma_var
     if np.any(breach_mask_ewma):
         ax2.scatter(
             out_of_sample_dates[breach_mask_ewma],
@@ -153,12 +153,12 @@ def plot_var_backtest_diagnostics(
     )
     ax3.plot(
         out_of_sample_dates,
-        -fhs_var * 100,
+        fhs_var * 100,
         color="#27ae60",
         lw=1.5,
         label="Filtered Historical Simulation (FHS) VaR",
     )
-    breach_mask_fhs = returns < -fhs_var
+    breach_mask_fhs = returns < fhs_var
     if np.any(breach_mask_fhs):
         ax3.scatter(
             out_of_sample_dates[breach_mask_fhs],
