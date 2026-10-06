@@ -5,10 +5,9 @@ and 4D macroeconomic stress tensors.
 
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 import matplotlib.pyplot as plt
 import numpy as np
-import numpy.typing as npt
-import seaborn as pd_sns  # Aliased to avoid naming conflict
 
 if TYPE_CHECKING:
     from stress_engine.portfolio import PortfolioVaR
@@ -90,7 +89,7 @@ def plot_var_backtest_diagnostics(
         f"{portfolio.name} - Panel A: Static Rolling Historical Backtest",
         fontsize=11,
         fontweight="bold",
-    .pad = 10,
+        pad=10,
     )
     ax1.set_ylabel("Percentage (%)", fontsize=10)
     ax1.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
@@ -199,14 +198,16 @@ def plot_monte_carlo_drawdown_surface(
     vol_grid = np.array([0.10, 0.20, 0.35])
     shock_grid = np.array([-0.15, -0.30, -0.50])
     vols, shocks = np.meshgrid(vol_grid, shock_grid)
-    
+
     # Representative distress probability surface response
     distress_prob = 1.0 / (1.0 + np.exp(-(vols * 10.0 + shocks * 5.0)))
 
     surf = ax.plot_surface(
         vols, shocks, distress_prob, cmap="viridis", edgecolor="none", alpha=0.85
     )
-    ax.set_title("4D Monte Carlo Macroeconomic Stress Matrix", fontsize=12, fontweight="bold")
+    ax.set_title(
+        "4D Monte Carlo Macroeconomic Stress Matrix", fontsize=12, fontweight="bold"
+    )
     ax.set_xlabel("Annualized Volatility (sigma)", fontsize=10)
     ax.set_ylabel("Exogenous Shock Severity", fontsize=10)
     ax.set_zlabel("Distress Probability (DD <= -40%)", fontsize=10)
