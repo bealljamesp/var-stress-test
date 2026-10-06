@@ -29,161 +29,115 @@ plt.rcParams.update(
 def plot_var_backtest_diagnostics(
     portfolio: "PortfolioVaR",
     lookback_window: int = 252,
-    output_filename: str | Path = "data/output/var_diagnostics.png",
-) -> Path:
-    """Generates a multi-panel publication-grade diagnostic figure comparing static
+    output_filename: str | Path | None = None,
+    output_dir: str | Path = "data/output",
+) -> list[Path]:
+    """Generates individual publication-grade diagnostic figures for all five
 
-    lookback windows against dynamic conditional volatility models and FHS.
+    risk models across the portfolio, yielding 10 total standalone charts.
     """
-    path = Path(output_filename)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run backtests to gather data series
-    hist_bt, _, hist_var = portfolio.run_rolling_out_of_sample_backtest(
-        lookback_window=lookback_window, method="historical"
-    )
-    ewma_bt, _, ewma_var = portfolio.run_ewma_out_of_sample_backtest(
-        lookback_window=lookback_window, decay_factor=0.94
-    )
-    garch_bt, _, garch_var = portfolio.run_gjr_garch_out_of_sample_backtest(
-        lookback_window=lookback_window
-    )
-    fhs_bt, _, fhs_var = portfolio.run_fhs_out_of_sample_backtest(
-        lookback_window=lookback_window
-    )
+    clean_portfolio_name = portfolio.name.split(" - ")[-1].lower().replace(" ", "_")
+    exported_paths = []
 
-    # Extract the exact out-of-sample datetime index and aggregate portfolio returns
-    out_of_sample_dates = portfolio.returns.index[-len(hist_var) :]
-    returns = portfolio.returns.iloc[-len(hist_var) :].dot(portfolio.weights)
-    if not isinstance(returns, np.ndarray):
-        returns = returns.to_numpy(dtype=np.float64, copy=False)
+    models_config = {
+        "rolling_historical": {
+            "title": "Rolling Historical Simulation (252-Day)",
+            "color": "#e67e22",
+            "runner": lambda: portfolio.run_rolling_out_of_sample_backtest(
+                lookback_window=lookback_window, method="historical"
+            ),
+        },
+        "rolling_parametric": {
+            "title": "Rolling Parametric Normal",
+            "color": "#d35400",
+            "runner": lambda: portfolio.run_rolling_out_of_sample_backtest(
+                lookback_window=lookback_window, method="parametric"
+            ),
+        },
+        "dynamic_ewma": {
+            "title": "Dynamic EWMA (lambda=0.94)",
+            "color": "#2980b9",
+            "runner": lambda: portfolio.run_ewma_out_of_sample_backtest(
+                lookback_window=lookback_window, decay_factor=0.94
+            ),
+        },
+        "gjr_garch": {
+            "title": "Dynamic GJR-GARCH(1,1) Asymmetric Leverage",
+            "color": "#8e44ad",
+            "runner": lambda: portfolio.run_gjr_garch_out_of_sample_backtest(
+                lookback_window=lookback_window
+            ),
+        },
+        "filtered_historical": {
+            "title": "Filtered Historical Simulation (FHS)",
+            "color": "#27ae60",
+            "runner": lambda: portfolio.run_fhs_out_of_sample_backtest(
+                lookback_window=lookback_window
+            ),
+        },
+    }
 
-    # Create a 3-panel stacked subplot layout for granular appendix inclusion
-    fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True, dpi=300)
+    for model_key, config in models_config.items():
+        bt_res, _, var_series = config["runner"]()
 
-    # Panel 1: Static Rolling Historical vs Returns & Breaches
-    ax1 = axes[0]
-    ax1.plot(
-        out_of_sample_dates,
-        returns * 100,
-        color="#7f8c8d",
-        alpha=0.6,
-        lw=1.0,
-        label="Daily Returns (%)",
-    )
-    ax1.plot(
-        out_of_sample_dates,
-        hist_var * 100,
-        color="#e67e22",
-        lw=1.5,
-        label="Rolling Historical VaR (95%)",
-    )
-    breach_mask_hist = returns < hist_var
-    if np.any(breach_mask_hist):
-        ax1.scatter(
-            out_of_sample_dates[breach_mask_hist],
-            returns[breach_mask_hist] * 100,
-            color="#c0392b",
-            s=25,
-            zorder=5,
-            label=f"Exceptions ({hist_bt.total_exceptions})",
+        out_of_sample_dates = portfolio.returns.index[-len(var_series) :]
+        returns = portfolio.returns.iloc[-len(var_series) :].dot(portfolio.weights)
+        if not isinstance(returns, np.ndarray):
+            returns = returns.to_numpy(dtype=np.float64, copy=False)
+
+        fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
+
+        ax.plot(
+            out_of_sample_dates,
+            returns * 100,
+            color="#7f8c8d",
+            alpha=0.6,
+            lw=1.0,
+            label="Daily Returns (%)",
         )
-    ax1.set_title(
-        f"{portfolio.name} - Panel A: Static Rolling Historical Backtest",
-        fontsize=11,
-        fontweight="bold",
-        pad=10,
-    )
-    ax1.set_ylabel("Percentage (%)", fontsize=10)
-    ax1.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
-
-    # Panel 2: Dynamic EWMA & GJR-GARCH Conditional Volatility Models
-    ax2 = axes[1]
-    ax2.plot(
-        out_of_sample_dates,
-        returns * 100,
-        color="#7f8c8d",
-        alpha=0.4,
-        lw=1.0,
-        label="_nolegend_",
-    )
-    ax2.plot(
-        out_of_sample_dates,
-        ewma_var * 100,
-        color="#2980b9",
-        lw=1.5,
-        label="Dynamic EWMA VaR (lambda=0.94)",
-    )
-    ax2.plot(
-        out_of_sample_dates,
-        garch_var * 100,
-        color="#8e44ad",
-        lw=1.5,
-        linestyle="-.",
-        label="GJR-GARCH(1,1) VaR",
-    )
-    breach_mask_ewma = returns < ewma_var
-    if np.any(breach_mask_ewma):
-        ax2.scatter(
-            out_of_sample_dates[breach_mask_ewma],
-            returns[breach_mask_ewma] * 100,
-            color="#c0392b",
-            s=25,
-            zorder=5,
-            label=f"EWMA Exceptions ({ewma_bt.total_exceptions})",
+        ax.plot(
+            out_of_sample_dates,
+            var_series * 100,
+            color=config["color"],
+            lw=1.5,
+            label=f"{config['title']} VaR (95%)",
         )
-    ax2.set_title(
-        f"{portfolio.name} - Panel B: Conditional Volatility Models (EWMA & GJR-GARCH)",
-        fontsize=11,
-        fontweight="bold",
-        pad=10,
-    )
-    ax2.set_ylabel("Percentage (%)", fontsize=10)
-    ax2.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
 
-    # Panel 3: Filtered Historical Simulation (FHS) Hybrid Model
-    ax3 = axes[2]
-    ax3.plot(
-        out_of_sample_dates,
-        returns * 100,
-        color="#7f8c8d",
-        alpha=0.4,
-        lw=1.0,
-        label="_nolegend_",
-    )
-    ax3.plot(
-        out_of_sample_dates,
-        fhs_var * 100,
-        color="#27ae60",
-        lw=1.5,
-        label="Filtered Historical Simulation (FHS) VaR",
-    )
-    breach_mask_fhs = returns < fhs_var
-    if np.any(breach_mask_fhs):
-        ax3.scatter(
-            out_of_sample_dates[breach_mask_fhs],
-            returns[breach_mask_fhs] * 100,
-            color="#c0392b",
-            s=25,
-            zorder=5,
-            label=f"FHS Exceptions ({fhs_bt.total_exceptions})",
+        breach_mask = returns < var_series
+        if np.any(breach_mask):
+            ax.scatter(
+                out_of_sample_dates[breach_mask],
+                returns[breach_mask] * 100,
+                color="#c0392b",
+                s=30,
+                zorder=5,
+                label=f"Exceptions ({bt_res.total_exceptions} / {bt_res.total_observations})",
+            )
+
+        ax.set_title(
+            f"{portfolio.name} - {config['title']}\n"
+            f"Kupiec POF p-value: {bt_res.kupiec_p_value:.4f} | "
+            f"Christoffersen p-value: {bt_res.christoffersen_p_value:.4f}",
+            fontsize=11,
+            fontweight="bold",
+            pad=12,
         )
-    ax3.set_title(
-        f"{portfolio.name} - Panel C: Semi-Parametric Filtered Historical Simulation",
-        fontsize=11,
-        fontweight="bold",
-        pad=10,
-    )
-    ax3.set_ylabel("Percentage (%)", fontsize=10)
-    ax3.set_xlabel("Trading Date", fontsize=10)
-    ax3.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
+        ax.set_ylabel("Percentage (%)", fontsize=10)
+        ax.set_xlabel("Trading Date", fontsize=10)
+        ax.legend(loc="upper left", frameon=True, facecolor="white", framealpha=0.9)
 
-    plt.tight_layout()
-    fig.savefig(path, format="png", bbox_inches="tight")
-    plt.close(fig)
+        plt.tight_layout()
+        filename = out_dir / f"var_diagnostics_{clean_portfolio_name}_{model_key}.png"
+        fig.savefig(filename, format="png", bbox_inches="tight")
+        plt.close(fig)
 
-    print(f"[+] Saved granular multi-panel diagnostics plot: {path}")
-    return path
+        exported_paths.append(filename)
+        print(f"[+] Saved individual model diagnostic: {filename}")
+
+    return exported_paths
 
 
 def plot_monte_carlo_drawdown_surface(
