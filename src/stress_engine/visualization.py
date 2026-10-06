@@ -78,8 +78,8 @@ def plot_var_backtest_diagnostics(
         lw=1.5,
         label="Rolling Historical VaR (95%)",
     )
-    # Highlight breach points
-    breach_mask_hist = hist_bt.exceptions
+    # Compute breach mask directly from returns and VaR series
+    breach_mask_hist = returns < -hist_var
     if np.any(breach_mask_hist):
         ax1.scatter(
             np.array(hist_dates)[breach_mask_hist],
@@ -123,7 +123,7 @@ def plot_var_backtest_diagnostics(
         linestyle="-.",
         label="GJR-GARCH(1,1) VaR",
     )
-    breach_mask_ewma = ewma_bt.exceptions
+    breach_mask_ewma = returns < -ewma_var
     if np.any(breach_mask_ewma):
         ax2.scatter(
             np.array(ewma_dates)[breach_mask_ewma],
@@ -159,7 +159,7 @@ def plot_var_backtest_diagnostics(
         lw=1.5,
         label="Filtered Historical Simulation (FHS) VaR",
     )
-    breach_mask_fhs = fhs_bt.exceptions
+    breach_mask_fhs = returns < -fhs_var
     if np.any(breach_mask_fhs):
         ax3.scatter(
             np.array(fhs_dates)[breach_mask_fhs],
