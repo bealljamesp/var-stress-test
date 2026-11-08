@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from stress_engine.monte_carlo import build_parametric_grid_arrays
+
 if TYPE_CHECKING:
     from stress_engine.portfolio import PortfolioVaR
 
@@ -151,28 +153,38 @@ def plot_monte_carlo_drawdown_surface(
 ) -> Path:
     """Plots distress probability over the volatility x shock-severity plane.
 
-    Reads the Monte Carlo node results (from ``results`` or ``results_path``). The
-    tail-tier and asymmetry dimensions are averaged out, so the surface is the mean
-    over those two dimensions for each (volatility, shock) pair.
+    The saved Monte Carlo results store tier labels (for example 'Vol-High'), not the
+    numeric values. The numeric volatility and shock for each node come from
+    build_parametric_grid_arrays(), which is the same grid the simulation used.
+    Tail tier and asymmetry are averaged out, and the title says so.
     """
     if results is None:
         results = pd.read_parquet(results_path)
 
-    required = {"Volatility", "Shock_Severity", "Distress_Probability"}
+    required = {"Institution_Key", "Distress_Probability"}
     missing = required - set(results.columns)
     if missing:
         raise ValueError(f"Monte Carlo results are missing columns: {sorted(missing)}")
 
-    grid = (
-        results.groupby(["Shock_Severity", "Volatility"])["Distress_Probability"]
+    grid_meta, _, _, _, _ = build_parametric_grid_arrays()
+    numeric = grid_meta[["Institution_Key", "annual_vol", "base_shock"]]
+
+    merged = results.merge(numeric, on="Institution_Key", how="inner", validate="one_to_one")
+    if len(merged) != len(results):
+        raise ValueError(
+            f"Only {len(merged)} of {len(results)} result rows matched the parameter grid"
+        )
+
+    surface = (
+        merged.groupby(["base_shock", "annual_vol"])["Distress_Probability"]
         .mean()
-        .unstack("Volatility")
+        .unstack("annual_vol")
         .sort_index()
     )
-    vol_vals = grid.columns.to_numpy(dtype=np.float64)
-    shock_vals = grid.index.to_numpy(dtype=np.float64)
+    vol_vals = surface.columns.to_numpy(dtype=np.float64)
+    shock_vals = surface.index.to_numpy(dtype=np.float64)
     vols, shocks = np.meshgrid(vol_vals, shock_vals)
-    distress = grid.to_numpy(dtype=np.float64)
+    distress = surface.to_numpy(dtype=np.float64)
 
     path = Path(output_filename)
     path.parent.mkdir(parents=True, exist_ok=True)

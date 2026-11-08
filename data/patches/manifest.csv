@@ -1,0 +1,7 @@
+ticker,source_file,status,reason,cadence,median_gap_days,raw_records,invalid_dropped,duplicate_dates_dropped,source_first,source_last,event_start,event_end,coverage,obs_in_window
+LEHMQ,LEHMQ_daily.html,written,Event window covered; written with cadence 'monthly',monthly,31.0,176,0,0,1994-05-31,2008-12-31,2007-01-01,2008-12-31,full,24
+BSC,BSC_daily.html,written,Event window covered; written with cadence 'monthly',monthly,31.0,221,0,0,1990-01-31,2008-05-30,2007-01-01,2008-06-30,full,17
+SIVB,SVB_daily.html,written,Event window covered; written with cadence 'monthly',monthly,31.0,428,0,0,1987-10-30,2023-05-12,2023-01-01,2023-05-31,full,5
+SBNY,SBNY_daily.html,skipped,Source does not cover the event window (Closure by regulators on 2023-03-12); coverage is 'none' with 0 observations in window,daily,1.0,148,0,0,2024-08-15,2025-03-11,2023-01-01,2023-06-30,none,0
+PACW,PACW_daily.html,written,Event window covered; written with cadence 'monthly',monthly,31.0,285,0,0,2000-06-30,2024-02-02,2023-01-01,2023-12-31,full,12
+CHK,CHK_daily.html,skipped,Source does not cover the event window (Chapter 11 filing on 2020-06-28 through emergence from bankruptcy); coverage is 'partial' with 5 observations in window,monthly,30.0,47,0,0,2021-02-26,2024-12-04,2020-01-01,2021-06-30,partial,5

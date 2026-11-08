@@ -1,54 +1,56 @@
 # Quantitative Risk & Liquidity Stress Testing Engine (`stress_engine`)
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/pytest-15%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/pytest-35%20passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style](https://img.shields.io/badge/typing-PEP%20585%20%7C%20604%20%7C%20646-informational.svg)]()
 
-A high-performance quantitative risk and liquidity stress-testing engine developed to institutional risk standards (Basel Committee on Banking Supervision / FRM Part 1).
+A quantitative risk and liquidity stress-testing engine built to institutional risk standards (Basel Committee on Banking Supervision / FRM Part 1).
 
-The platform evaluates historical asset and portfolio drawdowns, calculates dynamic conditional Value-at-Risk (VaR) and Expected Shortfall (ES), runs formal econometric regulatory backtests, and conducts vectorized Monte Carlo macroeconomic stress simulations across a 4D parametric state space ($36.45\text{M}$ path coordinates in $<3.0\text{s}$).
+The engine evaluates historical portfolio drawdowns, calculates dynamic conditional Value-at-Risk (VaR) and Expected Shortfall (ES), runs formal econometric regulatory backtests, and runs vectorized Monte Carlo macroeconomic stress simulations across a 4D parametric state space ($36.45\text{M}$ path coordinates in $<3.0\text{s}$ on the reference machine).
 
 ---
 
 ## Key Econometric & Engineering Features
 
-* **Anti-Loop Mandate & Tensor Vectorization:** Zero iterative loops for mathematical transformations, portfolio combinations, simulation paths, or rolling windows. Employs SIMD-aligned C-contiguous memory structures via NumPy and SciPy.
-* **Rolling Dynamic Strided Windows ($O(1)$ Allocation):** Leverages `numpy.lib.stride_tricks.sliding_window_view` to construct out-of-sample training/evaluation matrices without memory duplication.
+* **Vectorized Computation:** Rolling VaR thresholds, portfolio combinations, and simulation paths are computed with NumPy array operations. Rolling windows use `numpy.lib.stride_tricks.sliding_window_view`, which builds the training matrices without copying the data. The recursive volatility filters (EWMA and GJR-GARCH) and the rolling GJR-GARCH refits are Python loops, because each step depends on the previous one.
 * **Dynamic Conditional Volatility Engines:**
   * **RiskMetrics EWMA ($\lambda=0.94$):** Exponentially decaying memory footprint.
-  * **GJR-GARCH(1,1):** Asymmetric leverage estimation via constrained Sequential Least Squares Programming (SLSQP) Maximum Likelihood Estimation (MLE).
-  * **Filtered Historical Simulation (FHS):** Non-parametric standardization using empirical standardized innovations $z_t = r_t / \sigma_t$.
+  * **GJR-GARCH(1,1):** Asymmetric leverage estimated by constrained Sequential Least Squares Programming (SLSQP) Maximum Likelihood Estimation (MLE). Refit every 21 days on the trailing 252 returns, with two starting points per fit. A fit that fails to converge raises an error; the engine never substitutes starting values.
+  * **Filtered Historical Simulation (FHS):** Non-parametric standardization using empirical standardized innovations $z_t = r_t / \sigma_t$, with the innovation quantile taken from the same trailing training window as the GJR-GARCH fit.
 * **Regulatory Backtesting Suite:**
   * **Kupiec Proportion of Failures (POF) Test ($LR_{\text{uc}}$):** Unconditional coverage testing.
   * **Christoffersen Markov Independence Test ($LR_{\text{ind}}$):** Exception clustering and first-order Markov transition likelihood ratio testing.
   * **Christoffersen Combined Conditional Coverage ($LR_{\text{cc}}$):** Joint evaluation against $\chi^2(2)$.
   * **Basel Committee (BCBS) Traffic Light System:** Exact binomial cumulative density classification into Green, Yellow, and Red capital penalty zones.
-* **Modern Python 3.12+ Standards:** Strict type annotations via `numpy.typing.NDArray[np.float64]`, modern type unions (`|`), explicit axis selections, zero-copy `.to_numpy(dtype=np.float64, copy=False)` operations, and clean `src/` layout installation.
+* **Out-of-Sample Alignment:** Every forecast for day $t$ uses only returns through day $t-1$. Tests check this directly, including a test that changing future returns leaves earlier forecasts unchanged.
+* **Modern Python 3.12+ Standards:** Strict type annotations via `numpy.typing.NDArray[np.float64]`, modern type unions (`|`), explicit axis selections, zero-copy `.to_numpy(dtype=np.float64, copy=False)` operations, and a `src/` layout installed with `pip install -e .`.
 
 ---
 
 ## System Architecture
 
 ```text
-VaR-Simulation-Stress-Test/
+var-stress-test/
 ├── pyproject.toml                     # PEP 517/518 build specification
 ├── main.py                            # End-to-end execution pipeline
 ├── src/
 │   └── stress_engine/
 │       ├── __init__.py                # Package initialization & exports
 │       ├── backtest.py                # Kupiec, Christoffersen, & Basel III engines
-│       ├── ingestion.py               # Vectorized HTML/distressed patch parsing
+│       ├── ingestion.py               # Distressed-entity HTML parsing, event-window coverage checks, manifest
 │       ├── monte_carlo.py             # 4D tensor stress testing engine
-│       ├── portfolio.py               # PortfolioVaR, rolling OOS, & FHS engines
-│       ├── visualization.py           # Publication-grade diagnostic charting
-│       └── volatility.py              # EWMA and GJR-GARCH(1,1) MLE solvers
+│       ├── portfolio.py               # PortfolioVaR, rolling OOS backtests, GJR-GARCH & FHS engines
+│       ├── visualization.py           # VaR diagnostic charts and 4D stress surface
+│       └── volatility.py              # EWMA and GJR-GARCH(1,1) MLE solver
 ├── tests/
-│   └── test_stress_engine.py          # 15 mathematical & structural invariants
+│   ├── test_ingestion.py              # 12 ingestion invariants (offline, synthetic HTML)
+│   └── test_stress_engine.py          # 23 statistical, alignment, and contract invariants
 ├── data/
-│   ├── patches/                       # Standardized CSV patches
-│   ├── plots/                         # 300 DPI exported diagnostics
-│   └── raw/                           # Parquet metrics & master numpy tensors
+│   ├── patches/                       # Normalized distressed-entity CSVs and manifest.csv
+│   ├── output/                        # Descriptive summary CSV and VaR diagnostic charts
+│   ├── plots/                         # 4D Monte Carlo stress surface (300 DPI)
+│   └── raw/                           # Raw HTML scrapes, Monte Carlo parquet & tensors
 └── research/
     └── archive/                       # Deprecated scratchpads & experiments
 ```
@@ -71,11 +73,11 @@ $$\sigma_t^2 = \omega + \left( \alpha + \gamma \cdot \mathbb{I}_{\{r_{t-1} < 0\}
 
 $$\omega > 0, \quad \alpha \ge 0, \quad \gamma \ge 0, \quad \beta \ge 0, \quad \alpha + \beta + 0.5\gamma < 1.0$$
 
-* Filtered Historical Simulation (FHS)Standardized innovations are filtered from conditional volatility:
+* Filtered Historical Simulation (FHS). Standardized innovations are filtered from conditional volatility:
 
 $$z_t = \frac{r_t}{\sigma_t}$$
 
-* The dynamic out-of-sample loss cutoff is computed via the empirical quantile of historical residuals:
+* The out-of-sample loss cutoff is the empirical quantile of the standardized innovations in the training window, scaled by the forecast volatility:
 
 $$\text{VaR}_t^{\text{FHS}}(\alpha) = \text{Quantile}_\alpha(\{z_\tau\}_{\tau=t-W}^{t-1}) \cdot \sigma_t$$
 
@@ -103,36 +105,60 @@ $$LR_{\text{cc}} = LR_{\text{uc}} + LR_{\text{ind}} \sim \chi^2(2)$$
 
 ### Coherent Risk Measures: Expected Shortfall (CVaR)
 
-  To address the non-subadditivity of Value-at-Risk, the engine computes Expected Shortfall:
+To address the non-subadditivity of Value-at-Risk, the engine computes Expected Shortfall:
 
 $$\text{ES}_\alpha = \mathbb{E}\left[ -r_t \mid -r_t > \text{VaR}_\alpha \right]$$
 
 ---
 
-## Empirical Benchmark Findings (2008 Crisis Stress Horizon)
+## Empirical Benchmark Findings (2007–2009 Global Financial Crisis)
 
-Tested across N = 502 out-of-sample trading days (W = 252 lookback window) during the 2007–2009 Global Financial Crisis at 95% confidence level (p = 0.05, Target Breaches = 25.1):
+Each portfolio is backtested over N = 502 out-of-sample trading days with a W = 252 day lookback, at 95% confidence (p = 0.05, expected breaches = 25.1). The table is generated by `main.py`.
 
-| Portfolio Regime | Risk Model Engine | Breaches / Obs | Empirical Rate | Kupiec POF (LR_uc) | Christoffersen (LR_ind) | Regulatory Verdict |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Financials** *(Sector Meltdown)* | Rolling Historical (252d) | 46 / 502 | 9.16% | 14.861 (*p* &lt; 0.001) | 0.469 (*p* = 0.493) | **Reject Unconditional** |
-| | Rolling Parametric (Normal) | 44 / 502 | 8.76% | 12.355 (*p* &lt; 0.001) | 0.248 (*p* = 0.618) | **Reject Unconditional** |
-| | **Dynamic EWMA (&lambda;=0.94)** | 34 / 502 | 6.77% | 3.005 (*p* = 0.083) | 1.053 (*p* = 0.305) | **Accept Both** |
-| | **Dynamic GJR-GARCH(1,1)** | 34 / 502 | 6.77% | 3.005 (*p* = 0.083) | 1.207 (*p* = 0.272) | **Accept Both** |
-| | Filtered Historical (FHS) | 37 / 502 | 7.37% | 5.215 (*p* = 0.022) | 0.030 (*p* = 0.863) | **Reject Unconditional** |
-| **Multi-Asset** *(Flight to Safety)* | Rolling Historical (252d) | 29 / 502 | 5.78% | 0.609 (*p* = 0.435) | 12.102 (*p* &lt; 0.001) | **Reject Independence** |
-| | Rolling Parametric (Normal) | 31 / 502 | 6.18% | 1.363 (*p* = 0.243) | 7.091 (*p* = 0.008) | **Reject Independence** |
-| | **Dynamic EWMA (&lambda;=0.94)** | 26 / 502 | 5.18% | 0.034 (*p* = 0.855) | 0.368 (*p* = 0.544) | **Accept Both** |
-| | Dynamic GJR-GARCH(1,1) | 39 / 502 | 7.77% | 6.983 (*p* = 0.008) | 0.001 (*p* = 0.979) | **Reject Unconditional** |
-| | **Filtered Historical (FHS)** | 30 / 502 | 5.98% | 0.950 (*p* = 0.330) | 0.043 (*p* = 0.835) | **Accept Both** |
+### Concentrated Financials (equal-weight C, BAC, XLF, GS)
+
+| Risk Model Engine | Breaches / Obs | Empirical Rate | Kupiec POF (LR_uc) | Christoffersen (LR_ind) | Regulatory Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Rolling Historical (252d) | 46 / 502 | 9.16% | 14.861 (p = 0.0001) | 0.469 (p = 0.4933) | **Reject Unconditional** |
+| Rolling Parametric (Normal) | 44 / 502 | 8.76% | 12.355 (p = 0.0004) | 0.248 (p = 0.6183) | **Reject Unconditional** |
+| **Dynamic EWMA (λ=0.94)** | 35 / 502 | 6.97% | 3.681 (p = 0.0551) | 1.233 (p = 0.2668) | **Accept Both** |
+| Dynamic GJR-GARCH(1,1) | 33 / 502 | 6.57% | 2.392 (p = 0.1220) | 4.658 (p = 0.0309) | **Reject Independence** |
+| Filtered Historical (FHS) | 31 / 502 | 6.18% | 1.363 (p = 0.2431) | 4.092 (p = 0.0431) | **Reject Independence** |
+
+### Multi-Asset Diverse (SPY 40%, TLT 30%, GLD 20%, DBC 10%)
+
+| Risk Model Engine | Breaches / Obs | Empirical Rate | Kupiec POF (LR_uc) | Christoffersen (LR_ind) | Regulatory Verdict |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Rolling Historical (252d) | 29 / 502 | 5.78% | 0.609 (p = 0.4352) | 12.102 (p = 0.0005) | **Reject Independence** |
+| Rolling Parametric (Normal) | 31 / 502 | 6.18% | 1.363 (p = 0.2431) | 7.091 (p = 0.0077) | **Reject Independence** |
+| **Dynamic EWMA (λ=0.94)** | 25 / 502 | 4.98% | 0.000 (p = 0.9837) | 0.038 (p = 0.8455) | **Accept Both** |
+| **Dynamic GJR-GARCH(1,1)** | 25 / 502 | 4.98% | 0.000 (p = 0.9837) | 0.038 (p = 0.8455) | **Accept Both** |
+| **Filtered Historical (FHS)** | 26 / 502 | 5.18% | 0.034 (p = 0.8546) | 0.082 (p = 0.7752) | **Accept Both** |
 
 ### Takeaways
 
-The In-Sample Quantile Fallacy: In-sample static historical simulation guarantees an exact 5.00% breach rate by mathematical construction, creating a false sense of security while masking severe temporal shock clustering.
+**Static in-sample VaR is not a backtest.** In-sample historical simulation hits its own quantile by construction, so it reports the nominal rate exactly. That hides any time variation in the exceptions. The rolling out-of-sample rows above are the honest comparison.
 
-Dynamic Volatility Responsiveness: Unweighted rolling windows lag violent market shifts. Dynamic EWMA and GJR-GARCH rapidly scale conditional variance upward, mitigating breach clustering during systemic market panics.
+**Dynamic volatility reduces breaches in the crisis.** Against the static rolling windows, the dynamic models cut breaches in Concentrated Financials from 44–46 to 31–35. EWMA is the only model in that portfolio that passes both tests. GJR-GARCH and FHS pass unconditional coverage, but their exceptions still cluster in time (Christoffersen p = 0.03 and 0.04).
 
-Distributional Breakdown in Multi-Asset Portfolios: Standard GJR-GARCH under normal innovations failed on multi-asset portfolios (7.77% breach rate, p = 0.0082) due to tail thinness. Filtered Historical Simulation resolved the failure (5.98% breach rate, p = 0.3296) by combining GJR-GARCH variance scaling with empirical innovation tails.
+**Multi-asset results are mixed.** Both rolling windows reject independence in the multi-asset portfolio. EWMA, GJR-GARCH, and FHS pass both tests there. Evidence is thin, though. EWMA and GJR-GARCH produce identical breach counts and identical transition counts (T11 = 1), so their matching statistics are a coincidence of counts. Their thresholds differ on 10 of the 502 days.
+
+---
+
+## Distressed-Entity Patches (Event-Window Coverage)
+
+`ingestion.py` parses the raw HTML scrapes for six distressed financial and energy names and writes normalized patches. A patch is written only when its source covers the entity's event window. Otherwise the entity is recorded as skipped in `data/patches/manifest.csv`.
+
+| Ticker | Event Window | Source Cadence | Obs in Window | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| LEHMQ | 2007-01 to 2008-12 | Monthly | 24 | Written |
+| BSC | 2007-01 to 2008-06 | Monthly | 17 | Written |
+| SIVB | 2023-01 to 2023-05 | Monthly | 5 | Written |
+| PACW | 2023-01 to 2023-12 | Monthly | 12 | Written |
+| SBNY | 2023-01 to 2023-06 | Daily (2024–2025 only) | 0 | Skipped: no coverage |
+| CHK | 2020-01 to 2021-06 | Monthly (from 2021-02) | 5 | Skipped: partial coverage |
+
+These patches are not yet used by the analysis. The windows contain 5 to 24 monthly observations, which is too few for the 252-day backtests.
 
 ---
 
@@ -156,11 +182,13 @@ Memory & Execution Profile
 
 * Contiguous Memory Footprint: $\approx 145.8\text{ MB}$.
 
-* Execution Latency: $< 3.0\text{ seconds}$ on modern multi-core hardware via broadcasted SIMD vectorization.
+* Execution Latency: under 3 seconds on the reference machine, using broadcasted NumPy array operations.
 
 $$\mathbf{S}_{k, p, t} = 100 \cdot \exp\left( \sum_{\tau=1}^t \mathbf{R}_{k, p, \tau} \right)$$
 
 $$\mathbf{MDD}_{k, p} = \min_{t \in [1, T]} \left( \frac{\mathbf{S}_{k, p, t} - \max_{\tau \le t} \mathbf{S}_{k, p, \tau}}{\max_{\tau \le t} \mathbf{S}_{k, p, \tau}} \right)$$
+
+The stress surface plots distress probability over the volatility and shock-severity plane. Tail thickness and asymmetry are averaged out, and the figure title says so.
 
 ---
 
@@ -168,19 +196,18 @@ $$\mathbf{MDD}_{k, p} = \min_{t \in [1, T]} \left( \frac{\mathbf{S}_{k, p, t} - 
 
 | Artifact | Path | Description |
 | :--- | :--- | :--- |
-| **VaR Backtest Diagnostics** | `data/plots/var_diagnostics_*.png` | Time-series overlay of daily returns, time-varying VaR boundary bands, and exception breach clusters. |
-| **4D Stress Surface Matrix** | `data/plots/stress_matrix_4d_surface.png` | Faceted categorical surface contrasting shock severity vs. distress probability ($DD \le -40\%$). |
-
-The visualization pipeline produces publication-quality figures formatted with matplotlib and seaborn:
+| **VaR Backtest Diagnostics** | `data/output/var_diagnostics_*.png` | One chart per risk model: daily returns, the VaR threshold, and the breach points, with Kupiec and Christoffersen p-values in the title. |
+| **4D Stress Surface Matrix** | `data/plots/stress_matrix_4d_surface.png` | Distress probability ($DD \le -40\%$) across annualized volatility and shock severity, averaged over tail tier and asymmetry. |
 
 ---
 
 ## Getting Started
 
 ### Environment Setup
+
 ```
 # Clone the repository
-git clone [https://github.com/your-username/VaR-Simulation-Stress-Test.git](https://github.com/your-username/VaR-Simulation-Stress-Test.git)
+git clone https://github.com/your-username/VaR-Simulation-Stress-Test.git
 cd VaR-Simulation-Stress-Test
 
 # Create and activate Conda environment
@@ -191,40 +218,73 @@ conda activate var-simulation
 conda install pytest -y
 pip install -e .
 ```
+
 ### Execution
-Run the complete econometric analysis, backtesting suite, tensor simulation, and visualization generator:
+
+Run the econometric analysis, backtesting suite, and diagnostic chart generator. This downloads price data, so it needs network access:
+
 ```
 python main.py
 ```
+
+Rebuild the distressed-entity patches from the raw HTML (no network access needed):
+
+```
+rm -f data/patches/*.csv
+python src/stress_engine/ingestion.py
+```
+
 To run the standalone 4D Monte Carlo tensor stress simulation:
+
 ```
 python src/stress_engine/monte_carlo.py
 ```
+
 ### Verification
-Execute the test suite verifying all 15 mathematical and behavioral invariants:
+
+Run the full test suite:
+
 ```
 pytest -v
 ```
+
+The tests use synthetic data and do not download prices, so they run offline.
 
 ---
 
 ## Technical Invariants Tested
 
-### The test suite in tests/test_stress_engine.py asserts 15 mechanical and mathematical guarantees:
+### The test suite asserts 35 mechanical, statistical, and data-contract guarantees across `tests/`:
 
-* Kupiec POF Bounds: Verifies statistical non-rejection under perfect calibration (50 / 1000 breaches) and deterministic rejection under severe underestimation (150 / 1000 breaches).
+* **Kupiec POF Bounds:** Verifies statistical non-rejection under perfect calibration (50 / 1000 breaches) and deterministic rejection under severe underestimation (150 / 1000 breaches).
 
-* Christoffersen Markov Transitions: Verifies clustering detection (p < 0.05) on sequential exceptions and graceful handling of zero-exception boundary states.
+* **Christoffersen Markov Transitions:** Verifies clustering detection (p < 0.05) on sequential exceptions and graceful handling of zero-exception boundary states.
 
-* EWMA Monotonic Decay: Enforces that conditional variance strictly decreases across consecutive zero-return periods following an initial shock.
+* **EWMA Monotonic Decay:** Enforces that conditional variance strictly decreases across consecutive zero-return periods following an initial shock.
 
-* GJR-GARCH Stationarity: Validates non-negativity bounds (ω, α, γ, β > 0) and verifies the stationarity constraint (α + β + 0.5γ < 1.0).
+* **GJR-GARCH Stationarity and Failure Handling:** Validates non-negativity bounds (ω, α, γ, β > 0), the stationarity constraint (α + β + 0.5γ < 1.0), and that a non-converged optimizer raises an error instead of returning starting values.
 
-* Expected Shortfall Coherence: Asserts the subadditivity and severity invariant where Expected Shortfall strictly exceeds Value-at-Risk (ES > VaR) on non-degenerate distributions.
+* **Out-of-Sample Alignment:** Confirms that the EWMA threshold for day $t$ equals the causal volatility forecast for day $t$, and that GJR-GARCH and FHS thresholds for days before a change in the return series are unaffected by that change.
 
-* BCBS Basel III Boundaries: Confirms exact regulatory traffic light zone assignments (Green: 0–4 breaches, Yellow: 5–9 breaches, Red: 10+ breaches) and corresponding capital multiplier penalties (3.00 to 4.00).
+* **Descriptive Statistics:** Checks that drawdown is computed on compounded wealth (for both log and simple returns), and that the export writes only to the requested directory.
 
-* Tensor Geometry: Enforces valid probability bounds [0.0, 1.0], negative peak-to-trough drawdowns, and strict shape preservation across the (81, 5000, 90) float32 state space.
+* **Expected Shortfall Coherence:** Asserts that Expected Shortfall strictly exceeds Value-at-Risk (ES > VaR) on non-degenerate distributions.
+
+* **BCBS Basel III Boundaries:** Confirms exact regulatory traffic light zone assignments (Green: 0–4 breaches, Yellow: 5–9 breaches, Red: 10+ breaches) and corresponding capital multiplier penalties (3.00 to 4.00).
+
+* **Tensor Geometry:** Enforces valid probability bounds [0.0, 1.0], negative peak-to-trough drawdowns, and strict shape preservation across the (81, 5000, 90) float32 state space.
+
+* **Ingestion Contracts:** Checks that raw records are parsed (quoted and unquoted prices), malformed prices are rejected, non-positive values and duplicate dates are dropped and counted, monthly and daily cadence are classified correctly, coverage is classified as full, partial, or none, and only covered entities are written.
+
+---
+
+## Known Limitations
+
+* **GJR-GARCH boundary solutions.** On real data, alpha often sits at its lower bound (1e-6) in parts of the sample, and persistence reaches about 0.99 in some windows. The asymmetric term carries most of the shock response there. This is a property of the fitted data, not a convergence failure, but it should be stated wherever GJR-GARCH results are reported.
+* **Thin evidence in the multi-asset Christoffersen tests.** The EWMA and GJR-GARCH multi-asset results rest on a single pair of consecutive breaches. Read those independence results as weak.
+* **Small event-window samples.** The distressed-entity patches contain 5 to 24 monthly observations per event. No backtest in this repository runs on them yet.
+* **Two entities lack event data.** The Signature Bank (SBNY) source covers 2024–2025, not the 2023 failure, and the Chesapeake (CHK) source starts after its 2020 bankruptcy. Both need new sources.
+* **Monthly cadence in the distressed data.** Five of six sources are monthly despite their `_daily` file names. Any analysis that uses them has to work at a monthly horizon.
 
 ---
 
