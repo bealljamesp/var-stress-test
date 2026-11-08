@@ -52,17 +52,32 @@ def compute_ewma_volatility(
     return np.sqrt(variance)
 
 
+def _weighted_backcast(returns_sq: npt.NDArray[np.float64]) -> float:
+    """Presample variance proxy: weighted mean of the first min(75, n) squared returns.
+
+    Weights are 0.94**k, normalized to sum to one, matching arch's backcast.
+    """
+    tau = min(75, returns_sq.size)
+    w = 0.94 ** np.arange(tau)
+    w = w / w.sum()
+    return float(np.sum(returns_sq[:tau] * w))
+
+
 def _gjr_garch_likelihood_recursion(
     params: npt.NDArray[np.float64],
     returns_sq: npt.NDArray[np.float64],
     is_negative: npt.NDArray[np.float64],
-    initial_var: float,
+    backcast: float,
 ) -> tuple[float, npt.NDArray[np.float64]]:
-    """Recursive negative log-likelihood. variance[t] is the forecast for returns[t]."""
+    """Recursive negative log-likelihood. variance[t] is the forecast for returns[t].
+
+    The first variance uses the presample rule that arch uses:
+    omega + (alpha + gamma/2) * backcast + beta * backcast.
+    """
     omega, alpha, gamma, beta = params
     n = returns_sq.size
     variance = np.empty(n, dtype=np.float64)
-    variance[0] = initial_var
+    variance[0] = max(1e-8, omega + (alpha + 0.5 * gamma) * backcast + beta * backcast)
 
     for t in range(1, n):
         variance[t] = (
@@ -84,8 +99,9 @@ def fit_gjr_garch(
 
     The optimizer runs on percent returns from two starting points. The better
     converged fit is then polished with a tighter tolerance, and the polished
-    result is kept only if it improves the likelihood. Returned parameters,
-    log-likelihood, and conditional volatility are in decimal units.
+    result is kept only if it improves the likelihood. The presample variance
+    follows arch's convention. Returned parameters, log-likelihood, and conditional
+    volatility are in decimal units.
 
     Raises:
         RuntimeError: if neither starting point converges. A failed fit is never
@@ -96,6 +112,7 @@ def fit_gjr_garch(
 
     r_pct = r * _PCT
     r_sq_pct = r_pct**2
+    backcast_pct = _weighted_backcast(r_sq_pct)
     sample_var_pct = float(np.var(r_pct, ddof=1))
 
     # Parameters in percent units: [omega, alpha, gamma, beta]
@@ -113,7 +130,7 @@ def fit_gjr_garch(
     )
 
     def loss(p: npt.NDArray[np.float64]) -> float:
-        nll, _ = _gjr_garch_likelihood_recursion(p, r_sq_pct, is_neg, sample_var_pct)
+        nll, _ = _gjr_garch_likelihood_recursion(p, r_sq_pct, is_neg, backcast_pct)
         return nll
 
     best = None
@@ -156,9 +173,10 @@ def fit_gjr_garch(
     final_dec = np.array(
         [best.x[0] / _PCT**2, best.x[1], best.x[2], best.x[3]], dtype=np.float64
     )
-    sample_var = float(np.var(r, ddof=1))
+    r_sq = r**2
+    backcast_dec = _weighted_backcast(r_sq)
     nll_dec, cond_var = _gjr_garch_likelihood_recursion(
-        final_dec, r**2, is_neg, sample_var
+        final_dec, r_sq, is_neg, backcast_dec
     )
     persistence = float(final_dec[1] + final_dec[3] + 0.5 * final_dec[2])
 
