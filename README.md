@@ -1,7 +1,7 @@
 # Quantitative Risk & Liquidity Stress Testing Engine (`stress_engine`)
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/pytest-35%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/pytest-36%20passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style](https://img.shields.io/badge/typing-PEP%20585%20%7C%20604%20%7C%20646-informational.svg)]()
 
@@ -281,7 +281,7 @@ The tests use synthetic data and do not download prices, so they run offline.
 
 ## Technical Invariants Tested
 
-### The test suite asserts 35 mechanical, statistical, and data-contract guarantees across `tests/`:
+### The test suite asserts 36 mechanical, statistical, and data-contract guarantees across `tests/`:
 
 * **Kupiec POF Bounds:** Verifies statistical non-rejection under perfect calibration (50 / 1000 breaches) and deterministic rejection under severe underestimation (150 / 1000 breaches).
 
