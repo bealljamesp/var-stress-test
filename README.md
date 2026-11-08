@@ -1,7 +1,7 @@
 # Quantitative Risk & Liquidity Stress Testing Engine (`stress_engine`)
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/pytest-36%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/pytest-35%20passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style](https://img.shields.io/badge/typing-PEP%20585%20%7C%20604%20%7C%20646-informational.svg)]()
 
@@ -152,9 +152,11 @@ Each portfolio is backtested over N = 502 out-of-sample trading days with a W = 
 
 ---
 
-## Distressed-Entity Patches (Event-Window Coverage)
+## Distressed-Entity Data Collection (Not Analyzed)
 
 `ingestion.py` parses the raw HTML scrapes for six distressed financial and energy names and writes normalized patches. A patch is written only when its source covers the entity's event window. Otherwise the entity is recorded as skipped in `data/patches/manifest.csv`.
+
+This is data-collection output only. No analysis in the repository uses these patches. CHK and SBNY have no daily source found: Yahoo Finance returns no history for CHKAQ (the Chesapeake ticker used during its 2020 bankruptcy) or for SBNY in the 2023 window. Both stay skipped until a source is found.
 
 | Ticker | Event Window | Source Cadence | Obs in Window | Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -165,7 +167,7 @@ Each portfolio is backtested over N = 502 out-of-sample trading days with a W = 
 | SBNY | 2023-01 to 2023-06 | Daily (2024–2025 only) | 0 | Skipped: no coverage |
 | CHK | 2020-01 to 2021-06 | Monthly (from 2021-02) | 5 | Skipped: partial coverage |
 
-These patches are not yet used by the analysis. The windows contain 5 to 24 monthly observations, which is too few for the 252-day backtests.
+The four written patches contain 5 to 24 monthly observations per event. That is too few for the 252-day backtests, so the event-window analysis is deferred until daily data is available.
 
 ---
 
@@ -281,7 +283,7 @@ The tests use synthetic data and do not download prices, so they run offline.
 
 ## Technical Invariants Tested
 
-### The test suite asserts 36 mechanical, statistical, and data-contract guarantees across `tests/`:
+### The test suite asserts 35 mechanical, statistical, and data-contract guarantees across `tests/`:
 
 * **Kupiec POF Bounds:** Verifies statistical non-rejection under perfect calibration (50 / 1000 breaches) and deterministic rejection under severe underestimation (150 / 1000 breaches).
 
@@ -312,9 +314,7 @@ The tests use synthetic data and do not download prices, so they run offline.
 * **Coincident statistics in the multi-asset portfolio.** EWMA and FHS share breach and transition counts, so their independence statistics follow from those counts and are not independent confirmations of each other.
 * **Thin evidence in the multi-asset Christoffersen tests.** The independence results rest on a single pair of consecutive breaches in the EWMA and FHS cases.
 * **Cross-check limited to three windows.** The `arch` comparison covers three one-year windows, not the full backtest sample.
-* **Small event-window samples.** The distressed-entity patches contain 5 to 24 monthly observations per event. No backtest in this repository runs on them yet.
-* **Two entities lack event data.** The Signature Bank (SBNY) source covers 2024–2025, not the 2023 failure, and the Chesapeake (CHK) source starts after its 2020 bankruptcy. Both need new sources.
-* **Monthly cadence in the distressed data.** Five of six sources are monthly despite their `_daily` file names. Any analysis that uses them has to work at a monthly horizon.
+* **Distressed-entity data is collection-only.** Five of six sources are monthly despite their `_daily` file names, with 5 to 24 observations per event window. Two entities (CHK and SBNY) have no daily source found, so they are skipped. No analysis uses these patches until daily data is available.
 * **Hand-chosen Monte Carlo grid.** The stress tiers are not calibrated to history, so the 4D surface is illustrative only.
 
 ---
