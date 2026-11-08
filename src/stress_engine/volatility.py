@@ -83,8 +83,9 @@ def fit_gjr_garch(
     """Fits GJR-GARCH(1,1) via Maximum Likelihood Estimation (MLE).
 
     The optimizer runs on percent returns from two starting points. The better
-    converged fit is kept. Returned parameters, log-likelihood, and conditional
-    volatility are in decimal units.
+    converged fit is then polished with a tighter tolerance, and the polished
+    result is kept only if it improves the likelihood. Returned parameters,
+    log-likelihood, and conditional volatility are in decimal units.
 
     Raises:
         RuntimeError: if neither starting point converges. A failed fit is never
@@ -136,6 +137,19 @@ def fit_gjr_garch(
             f"GJR-GARCH MLE failed to converge on {r.size} observations from both "
             f"starting points: {' | '.join(messages)}"
         )
+
+    # Polish: restart from the best point with a tighter tolerance. The polished
+    # point is kept only if it converges and strictly improves the likelihood.
+    polished = minimize(
+        loss,
+        best.x,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"ftol": 1e-12, "maxiter": 1000},
+    )
+    if polished.success and np.isfinite(polished.fun) and polished.fun < best.fun:
+        best = polished
 
     # Convert the fitted parameters back to decimal units and evaluate the likelihood
     # on the original returns, so the reported values are in decimal units.
