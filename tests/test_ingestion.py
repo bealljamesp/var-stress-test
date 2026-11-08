@@ -1,16 +1,15 @@
 """Offline tests for stress_engine.ingestion using synthetic HTML fixtures."""
 
 import pandas as pd
-import pytest
 
 from stress_engine.ingestion import (
+    TARGET_ENTITIES,
     assess_coverage,
     classify_cadence,
     clean_series,
     extract_distressed_patches,
     parse_raw_records,
     process_entity,
-    TARGET_ENTITIES,
 )
 
 
@@ -26,7 +25,9 @@ def _html(records: list[tuple[str, str]]) -> str:
 
 def _monthly(start: str, end: str, base: float = 10.0) -> list[tuple[str, str]]:
     dates = pd.date_range(start, end, freq=pd.offsets.MonthEnd())
-    return [(d.strftime("%Y-%m-%d"), f"{base + i * 0.1:.4f}") for i, d in enumerate(dates)]
+    return [
+        (d.strftime("%Y-%m-%d"), f"{base + i * 0.1:.4f}") for i, d in enumerate(dates)
+    ]
 
 
 def _entity(ticker: str):
@@ -70,7 +71,9 @@ def test_parse_returns_empty_frame_when_no_records() -> None:
 def test_clean_drops_non_positive_and_duplicate_dates() -> None:
     raw = pd.DataFrame(
         {
-            "Date": pd.to_datetime(["2008-01-31", "2008-01-31", "2008-02-29", "2008-03-31"]),
+            "Date": pd.to_datetime(
+                ["2008-01-31", "2008-01-31", "2008-02-29", "2008-03-31"]
+            ),
             "Close": [10.0, 10.5, 0.0, 11.0],
         }
     )
@@ -86,7 +89,9 @@ def test_clean_drops_non_positive_and_duplicate_dates() -> None:
 
 
 def test_cadence_monthly_series() -> None:
-    dates = pd.DatetimeIndex(pd.date_range("2000-01-31", periods=24, freq=pd.offsets.MonthEnd()))
+    dates = pd.DatetimeIndex(
+        pd.date_range("2000-01-31", periods=24, freq=pd.offsets.MonthEnd())
+    )
     cadence, median = classify_cadence(dates)
     assert cadence == "monthly"
     assert 28 <= median <= 31
@@ -99,21 +104,27 @@ def test_cadence_daily_series() -> None:
 
 
 def test_coverage_none_when_no_observations_in_window() -> None:
-    dates = pd.DatetimeIndex(pd.date_range("2024-08-31", "2025-03-31", freq=pd.offsets.MonthEnd()))
+    dates = pd.DatetimeIndex(
+        pd.date_range("2024-08-31", "2025-03-31", freq=pd.offsets.MonthEnd())
+    )
     status, n = assess_coverage(dates, "2023-01-01", "2023-06-30", 30.0)
     assert status == "none"
     assert n == 0
 
 
 def test_coverage_partial_when_series_starts_after_window() -> None:
-    dates = pd.DatetimeIndex(pd.date_range("2021-02-28", "2024-12-31", freq=pd.offsets.MonthEnd()))
+    dates = pd.DatetimeIndex(
+        pd.date_range("2021-02-28", "2024-12-31", freq=pd.offsets.MonthEnd())
+    )
     status, n = assess_coverage(dates, "2020-01-01", "2021-06-30", 30.0)
     assert status == "partial"
     assert n > 0
 
 
 def test_coverage_full_when_series_spans_window() -> None:
-    dates = pd.DatetimeIndex(pd.date_range("1994-05-31", "2008-12-31", freq=pd.offsets.MonthEnd()))
+    dates = pd.DatetimeIndex(
+        pd.date_range("1994-05-31", "2008-12-31", freq=pd.offsets.MonthEnd())
+    )
     status, _ = assess_coverage(dates, "2007-01-01", "2008-12-31", 30.0)
     assert status == "full"
 
@@ -143,8 +154,14 @@ def test_process_entity_writes_patch_with_window_flag(tmp_path) -> None:
     assert report.coverage == "full"
     assert patch is not None
     assert set(patch.columns) == {
-        "Date", "Ticker", "Name", "Category", "Sector",
-        "Close", "Adj_Close", "InEventWindow",
+        "Date",
+        "Ticker",
+        "Name",
+        "Category",
+        "Sector",
+        "Close",
+        "Adj_Close",
+        "InEventWindow",
     }
     # No fabricated OHLC or Volume columns
     assert not {"Open", "High", "Low", "Volume"} & set(patch.columns)
