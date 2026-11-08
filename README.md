@@ -7,7 +7,7 @@
 
 A quantitative risk and liquidity stress-testing engine built to institutional risk standards (Basel Committee on Banking Supervision / FRM Part 1).
 
-The engine evaluates historical portfolio drawdowns, calculates dynamic conditional Value-at-Risk (VaR) and Expected Shortfall (ES), runs formal econometric regulatory backtests, and runs vectorized Monte Carlo macroeconomic stress simulations across a 4D parametric state space ($36.45\text{M}$ path coordinates in $<3.0\text{s}$ on the reference machine).
+The engine evaluates historical portfolio drawdowns, calculates dynamic conditional Value-at-Risk (VaR) and Expected Shortfall (ES), runs formal econometric regulatory backtests, and runs vectorized Monte Carlo macroeconomic stress simulations across a 4D parametric state space ($36.45\text{M}$ path coordinates in 1.73 s, end-to-end, on the author's workstation).
 
 ---
 
@@ -205,7 +205,7 @@ Memory & Execution Profile
 
 * Contiguous Memory Footprint: $\approx 145.8\text{ MB}$.
 
-* Execution Latency: under 3 seconds on the reference machine, using broadcasted NumPy array operations. Not re-measured on other hardware.
+* Execution Latency: 1.73 s end-to-end on the author's workstation (single run, including writing the parquet metrics and the float32 tensor to disk), using broadcasted NumPy array operations. Not measured on other hardware.
 
 $$\mathbf{S}_{k, p, t} = 100 \cdot \exp\left( \sum_{\tau=1}^t \mathbf{R}_{k, p, \tau} \right)$$
 
@@ -230,7 +230,7 @@ The stress surface plots distress probability over the volatility and shock-seve
 
 ```
 # Clone the repository
-git clone https://github.com/your-username/VaR-Simulation-Stress-Test.git
+git clone https://github.com/bealljamesp/var-stress-test
 cd VaR-Simulation-Stress-Test
 
 # Create and activate Conda environment
