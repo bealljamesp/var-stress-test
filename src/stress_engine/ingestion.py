@@ -287,7 +287,7 @@ def process_entity(
             "Close": cleaned["Close"].to_numpy(),
             # Source adjustment status is unverified; Adj_Close mirrors Close until checked
             "Adj_Close": cleaned["Close"].to_numpy(),
-            "InEventWindow": in_window.to_numpy(),
+            "InEventWindow": np.asarray(in_window, dtype=bool),
         }
     )
     reason = f"Event window covered; written with cadence '{cadence}'"
