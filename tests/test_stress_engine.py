@@ -1,17 +1,68 @@
-"""Comprehensive mathematical and behavioral unit test suite for stress_engine."""
+"""Comprehensive mathematical and behavioral unit test suite for stress_engine.
+
+Portfolio tests construct synthetic return series directly instead of downloading
+market data, so the suite runs offline and does not write to tracked output folders.
+"""
+
+from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
+from scipy import stats
 
+import stress_engine.volatility as volatility
 from stress_engine.backtest import (
+    BaselZone,
     calculate_var_exceptions,
     christoffersen_independence_test,
+    compute_expected_shortfall,
+    evaluate_basel_traffic_light,
     kupiec_pof_test,
     run_full_var_backtest,
 )
 from stress_engine.monte_carlo import run_comprehensive_stress_engine
-from stress_engine.portfolio import PortfolioVaR, export_descriptive_statistics
+from stress_engine.portfolio import (
+    PortfolioVaR,
+    export_descriptive_statistics,
+    summarize_return_series,
+)
 from stress_engine.volatility import compute_ewma_volatility, fit_gjr_garch
+
+# =====================================================================
+# Helpers
+# =====================================================================
+
+
+def _synthetic_portfolio(returns: np.ndarray, name: str = "Synthetic") -> PortfolioVaR:
+    """Portfolio whose return series is supplied directly (no network access)."""
+    port = PortfolioVaR(
+        name=name,
+        tickers=["A"],
+        weights=[1.0],
+        start_date="2020-01-01",
+        end_date="2021-01-01",
+    )
+    port.portfolio_returns = np.ascontiguousarray(returns, dtype=np.float64)
+    return port
+
+
+def _run_thresholds(method: str, returns: np.ndarray, lookback: int) -> np.ndarray:
+    port = _synthetic_portfolio(returns)
+    if method == "ewma":
+        _, _, thresholds = port.run_ewma_out_of_sample_backtest(lookback_window=lookback)
+    elif method == "gjr":
+        _, _, thresholds = port.run_gjr_garch_out_of_sample_backtest(
+            lookback_window=lookback, refit_every=21
+        )
+    elif method == "fhs":
+        _, _, thresholds = port.run_fhs_out_of_sample_backtest(
+            lookback_window=lookback, refit_every=21
+        )
+    else:
+        raise ValueError(method)
+    return thresholds
+
 
 # =====================================================================
 # 1. REGULATORY BACKTESTING INVARIANTS (KUPIEC & CHRISTOFFERSEN)
@@ -127,8 +178,65 @@ def test_gjr_garch_stationarity_and_parameter_bounds() -> None:
     assert (cond_sigma > 0.0).all()
 
 
+def test_gjr_fit_raises_when_optimizer_does_not_converge(monkeypatch) -> None:
+    # The starting guess must never be returned as if it were a fitted model
+    def failed_minimize(*args, **kwargs):
+        return SimpleNamespace(
+            success=False,
+            x=np.zeros(4),
+            fun=np.inf,
+            message="Positive directional derivative for linesearch",
+        )
+
+    monkeypatch.setattr(volatility, "minimize", failed_minimize)
+    returns = np.random.default_rng(0).normal(0.0, 0.01, size=300)
+
+    with pytest.raises(RuntimeError, match="failed to converge"):
+        fit_gjr_garch(returns)
+
+
 # =====================================================================
-# 3. 4D TENSOR MONTE CARLO INVARIANTS
+# 3. OUT-OF-SAMPLE ALIGNMENT & LOOK-AHEAD INVARIANTS
+# =====================================================================
+
+
+def test_ewma_threshold_matches_causal_sigma_for_same_day() -> None:
+    # Threshold i is the forecast for day W + i, built from returns through W + i - 1
+    rng = np.random.default_rng(7)
+    returns = rng.normal(0.0, 0.02, size=400)
+    lookback = 100
+
+    _, realized, thresholds = _synthetic_portfolio(returns).run_ewma_out_of_sample_backtest(
+        lookback_window=lookback
+    )
+    sigma = compute_ewma_volatility(returns, decay_factor=0.94)
+    z = stats.norm.ppf(0.95)
+
+    assert np.array_equal(realized, returns[lookback:])
+    assert np.allclose(thresholds, -z * sigma[lookback:], rtol=0.0, atol=1e-14)
+
+
+@pytest.mark.parametrize("method", ["ewma", "gjr", "fhs"])
+def test_forecasts_do_not_depend_on_future_returns(method: str) -> None:
+    rng = np.random.default_rng(11)
+    returns = rng.standard_t(df=5.0, size=400) * 0.015
+    lookback = 100
+    cut = 250  # Days from 250 onward are altered
+
+    perturbed = returns.copy()
+    perturbed[cut:] = perturbed[cut:] * -3.0 + 0.05
+
+    thr_original = _run_thresholds(method, returns, lookback)
+    thr_perturbed = _run_thresholds(method, perturbed, lookback)
+
+    # thresholds[i] is the forecast for day lookback + i. Forecasts for days before
+    # `cut` must be identical, because they use only returns before `cut`.
+    k = cut - lookback
+    assert np.allclose(thr_original[:k], thr_perturbed[:k], rtol=0.0, atol=1e-12)
+
+
+# =====================================================================
+# 4. 4D TENSOR MONTE CARLO INVARIANTS
 # =====================================================================
 
 
@@ -151,7 +259,7 @@ def test_monte_carlo_tensor_geometry_and_bounds() -> None:
 
 
 # =====================================================================
-# 4. PORTFOLIO ENGINE CONTRACTS & INPUT VALIDATION
+# 5. PORTFOLIO ENGINE CONTRACTS & INPUT VALIDATION
 # =====================================================================
 
 
@@ -178,22 +286,9 @@ def test_portfolio_weights_not_summing_to_one() -> None:
 
 
 def test_portfolio_lookback_exceeding_data_length() -> None:
-    port = PortfolioVaR(
-        name="Short Horizon",
-        tickers=["SPY"],
-        weights=[1.0],
-        start_date="2020-01-01",
-        end_date="2020-02-01",  # ~21 trading days
-    )
+    port = _synthetic_portfolio(np.random.default_rng(1).normal(0.0, 0.01, size=21))
     with pytest.raises(ValueError, match="must exceed lookback window"):
         port.run_rolling_out_of_sample_backtest(lookback_window=252)
-
-
-from stress_engine.backtest import (
-    BaselZone,
-    compute_expected_shortfall,
-    evaluate_basel_traffic_light,
-)
 
 
 def test_expected_shortfall_strictly_exceeds_var() -> None:
@@ -227,16 +322,29 @@ def test_basel_traffic_light_regulatory_boundaries() -> None:
 
 
 # =====================================================================
-# 5. EXPORT FUNCTIONALITY
+# 6. DESCRIPTIVE STATISTICS & EXPORT
 # =====================================================================
 
 
-def test_export_descriptive_statistics() -> None:
-    from pathlib import Path
+def test_summary_max_drawdown_uses_compounded_log_wealth() -> None:
+    # Log returns -0.5 then +0.2: wealth 1.0 -> exp(-0.5), trough measured from 1.0
+    out = summarize_return_series(np.array([-0.5, 0.2]), log_returns=True)
+    assert np.isclose(out["Maximum Drawdown"], np.exp(-0.5) - 1.0)
 
-    import pandas as pd
 
-    from stress_engine.portfolio import PortfolioVaR
+def test_summary_max_drawdown_uses_compounded_simple_wealth() -> None:
+    # Simple returns -50% then +100%: wealth 1.0 -> 0.5 -> 1.0, drawdown -50%
+    out = summarize_return_series(np.array([-0.5, 1.0]), log_returns=False)
+    assert np.isclose(out["Maximum Drawdown"], -0.5)
+
+
+def test_export_descriptive_statistics_writes_to_requested_dir(tmp_path) -> None:
+    rng = np.random.default_rng(3)
+    n = 400
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    log_returns = pd.DataFrame(
+        rng.normal(0.0005, 0.01, size=(n, 2)), index=idx, columns=["SPY", "TLT"]
+    )
 
     port = PortfolioVaR(
         name="Test Portfolio",
@@ -245,11 +353,12 @@ def test_export_descriptive_statistics() -> None:
         start_date="2022-01-01",
         end_date="2023-12-31",
     )
+    port.returns = log_returns  # Supply returns directly; no download
 
-    df = export_descriptive_statistics([port])
+    df = export_descriptive_statistics([port], output_dir=tmp_path, lookback_window=120)
 
     assert isinstance(df, pd.DataFrame)
     assert not df.empty
     assert "Annualized Volatility" in df.columns
     assert "FHS Breaches" in df.columns
-    assert Path("data/output/week10_descriptive_summary.csv").exists()
+    assert (tmp_path / "week10_descriptive_summary.csv").exists()

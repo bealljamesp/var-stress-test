@@ -22,7 +22,10 @@ def compute_ewma_volatility(
     decay_factor: float = 0.94,
     initial_variance: float | None = None,
 ) -> npt.NDArray[np.float64]:
-    """Calculates dynamic conditional volatility using the RiskMetrics EWMA filter."""
+    """Calculates dynamic conditional volatility using the RiskMetrics EWMA filter.
+
+    Output index t is the forecast for returns[t], built only from returns through t-1.
+    """
     returns_arr = np.ascontiguousarray(returns, dtype=np.float64)
     n = returns_arr.size
     variance = np.empty(n, dtype=np.float64)
@@ -50,7 +53,7 @@ def _gjr_garch_likelihood_recursion(
     is_negative: npt.NDArray[np.float64],
     initial_var: float,
 ) -> tuple[float, npt.NDArray[np.float64]]:
-    """Internal JIT/C-compatible recursive negative log-likelihood calculator."""
+    """Recursive negative log-likelihood. variance[t] is the forecast for returns[t]."""
     omega, alpha, gamma, beta = params
     n = returns_sq.size
     variance = np.empty(n, dtype=np.float64)
@@ -72,7 +75,14 @@ def _gjr_garch_likelihood_recursion(
 def fit_gjr_garch(
     returns: npt.NDArray[np.float64],
 ) -> tuple[GJRGARCHParams, npt.NDArray[np.float64]]:
-    """Fits GJR-GARCH(1,1) via Maximum Likelihood Estimation (MLE) and returns parameters & conditional volatility."""
+    """Fits GJR-GARCH(1,1) via Maximum Likelihood Estimation (MLE).
+
+    Returns the parameters and the in-sample conditional volatility.
+
+    Raises:
+        RuntimeError: if the SLSQP optimizer does not report convergence. The
+            starting guess is never returned as if it were a fit.
+    """
     r = np.ascontiguousarray(returns, dtype=np.float64)
     r_sq = r**2
     is_neg = (r < 0.0).astype(np.float64)
@@ -104,10 +114,12 @@ def fit_gjr_garch(
     )
 
     if not opt_res.success:
-        # Fallback to initial guess if optimization encounters numerical failure
-        final_params = init_params
-    else:
-        final_params = opt_res.x
+        raise RuntimeError(
+            f"GJR-GARCH MLE failed to converge on {r.size} observations: "
+            f"{opt_res.message}"
+        )
+
+    final_params = opt_res.x
 
     _, cond_var = _gjr_garch_likelihood_recursion(
         final_params, r_sq, is_neg, sample_var

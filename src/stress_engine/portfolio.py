@@ -9,6 +9,99 @@ import yfinance as yf
 from scipy import stats
 
 from stress_engine.backtest import BacktestResult, run_full_var_backtest
+from stress_engine.volatility import compute_ewma_volatility, fit_gjr_garch
+
+TRADING_DAYS = 252
+
+
+def summarize_return_series(
+    portfolio_returns: npt.NDArray[np.float64],
+    log_returns: bool = True,
+) -> dict[str, float]:
+    """Descriptive statistics and maximum drawdown for a single portfolio return series.
+
+    The drawdown is computed on the compounded wealth path starting at 1.0. For log
+    returns the wealth path is exp(cumsum(r)); for simple returns it is cumprod(1 + r).
+    """
+    r = np.ascontiguousarray(portfolio_returns, dtype=np.float64)
+    mean_ret = float(np.mean(r))
+    std_dev = float(np.std(r, ddof=1))
+    z_scores = (r - mean_ret) / std_dev
+
+    if log_returns:
+        wealth = np.exp(np.concatenate(([0.0], np.cumsum(r))))
+    else:
+        wealth = np.concatenate(([1.0], np.cumprod(1.0 + r)))
+
+    peak = np.maximum.accumulate(wealth)
+    drawdown = (wealth - peak) / peak
+
+    return {
+        "Daily Mean Return": mean_ret,
+        "Annualized Volatility": float(std_dev * np.sqrt(TRADING_DAYS)),
+        "Skewness": float(np.mean(z_scores**3)),
+        "Excess Kurtosis": float(np.mean(z_scores**4) - 3.0),
+        "Maximum Drawdown": float(np.min(drawdown)),
+    }
+
+
+def _rolling_gjr_forecasts(
+    returns: npt.NDArray[np.float64],
+    lookback_window: int,
+    refit_every: int,
+    alpha: float,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """Strictly out-of-sample one-step-ahead GJR-GARCH(1,1) volatility forecasts.
+
+    Parameters are re-estimated every ``refit_every`` days, each time on only the
+    trailing ``lookback_window`` returns that end the day before the block starts.
+    Within a block, the variance recursion runs forward through realized returns,
+    so the forecast for day t depends only on returns dated t-1 and earlier.
+
+    Returns:
+        sigma_forecast: forecast volatility for days W..T-1, length T - W.
+        standardized_quantile: alpha-quantile of the in-window standardized residuals
+            for the block containing each day, length T - W. Used by FHS.
+    """
+    r = np.ascontiguousarray(returns, dtype=np.float64)
+    n = r.size
+    n_forecasts = n - lookback_window
+    sigma_forecast = np.empty(n_forecasts, dtype=np.float64)
+    standardized_quantile = np.empty(n_forecasts, dtype=np.float64)
+
+    for block_start in range(lookback_window, n, refit_every):
+        block_end = min(block_start + refit_every, n)
+
+        # Training data ends at day block_start - 1: nothing from the block is used
+        train = r[block_start - lookback_window : block_start]
+        params, train_sigma = fit_gjr_garch(train)
+
+        z_train = train / np.maximum(train_sigma, 1e-8)
+        block_quantile = float(np.percentile(z_train, alpha * 100.0))
+
+        # One-step-ahead variance for day block_start, built from the last training day
+        last_r = float(train[-1])
+        var = (
+            params.omega
+            + (params.alpha + params.gamma * float(last_r < 0.0)) * last_r**2
+            + params.beta * float(train_sigma[-1]) ** 2
+        )
+
+        for t in range(block_start, block_end):
+            idx = t - lookback_window
+            sigma_forecast[idx] = np.sqrt(var)
+            standardized_quantile[idx] = block_quantile
+
+            # Advance the recursion with the realized return on day t
+            r_t = float(r[t])
+            var = max(
+                1e-8,
+                params.omega
+                + (params.alpha + params.gamma * float(r_t < 0.0)) * r_t**2
+                + params.beta * var,
+            )
+
+    return sigma_forecast, standardized_quantile
 
 
 class PortfolioVaR:
@@ -49,6 +142,7 @@ class PortfolioVaR:
 
         self.market_data: pd.DataFrame | None = None
         self.returns: pd.DataFrame | None = None
+        self.return_method: str = "log"
         self.portfolio_returns: npt.NDArray[np.float64] | None = None
 
     def download_data(self) -> pd.DataFrame:
@@ -90,6 +184,9 @@ class PortfolioVaR:
             raise ValueError("Invalid return method. Choose 'log' or 'simple'.")
 
         self.returns = self.returns.dropna()
+        self.return_method = method
+        # Portfolio returns depend on the asset returns, so they must be rebuilt
+        self.portfolio_returns = None
         return self.returns
 
     def compute_portfolio_returns(self) -> npt.NDArray[np.float64]:
@@ -143,29 +240,25 @@ class PortfolioVaR:
                 f"Total observations ({total_obs}) must exceed lookback window ({lookback_window})."
             )
 
-        # Extract pre-realization training slices via O(1) strided window: (T - W, W)
+        # Row i is returns[i : i + W]; it forecasts returns[i + W], so the last
+        # training row ends on the day before the forecast day.
         training_windows = np.lib.stride_tricks.sliding_window_view(
             self.portfolio_returns[:-1], window_shape=lookback_window
         )
-        # Out-of-sample realized returns: vector of length T - W
         realized_returns = self.portfolio_returns[lookback_window:]
 
         alpha = 1.0 - self.confidence_level
 
         if method == "historical":
-            # Vectorized percentile computation along lookback axis (axis 1)
             var_thresholds = np.percentile(training_windows, alpha * 100.0, axis=1)
         elif method == "parametric":
-            # Vectorized mean and standard deviation along lookback axis
             mu = np.mean(training_windows, axis=1)
             sigma = np.std(training_windows, axis=1, ddof=1)
             z_score = float(stats.norm.ppf(self.confidence_level))
-            # Loss cutoff threshold in return space (negative value)
             var_thresholds = mu - (z_score * sigma)
         else:
             raise ValueError("Method must be 'historical' or 'parametric'.")
 
-        # Run Kupiec & Christoffersen against realized out-of-sample series
         backtest = run_full_var_backtest(
             returns=realized_returns,
             var_thresholds=var_thresholds,
@@ -204,18 +297,17 @@ class PortfolioVaR:
         decay_factor: float = 0.94,
     ) -> tuple[BacktestResult, npt.NDArray[np.float64], npt.NDArray[np.float64]]:
         """Executes out-of-sample backtest using dynamic EWMA conditional volatility."""
-        from stress_engine.volatility import compute_ewma_volatility
-
         if self.portfolio_returns is None:
             self.run_analysis()
 
         assert self.portfolio_returns is not None
+
+        # compute_ewma_volatility sets sigma[t] from returns through t-1, so sigma[t]
+        # is already the forecast for returns[t]. No shift is applied.
         sigma_series = compute_ewma_volatility(
             self.portfolio_returns, decay_factor=decay_factor
         )
-
-        # Shift conditional sigma by 1 to make it strictly out-of-sample: sigma_t forecasts r_t
-        forecast_sigma = sigma_series[lookback_window - 1 : -1]
+        forecast_sigma = sigma_series[lookback_window:]
         realized_returns = self.portfolio_returns[lookback_window:]
 
         z_score = float(stats.norm.ppf(self.confidence_level))
@@ -231,18 +323,17 @@ class PortfolioVaR:
     def run_gjr_garch_out_of_sample_backtest(
         self,
         lookback_window: int = 252,
+        refit_every: int = 21,
     ) -> tuple[BacktestResult, npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-        """Executes out-of-sample backtest using dynamic GJR-GARCH(1,1) asymmetric conditional volatility."""
-        from stress_engine.volatility import fit_gjr_garch
-
+        """Executes out-of-sample backtest using rolling-refit GJR-GARCH(1,1) volatility."""
         if self.portfolio_returns is None:
             self.run_analysis()
 
         assert self.portfolio_returns is not None
-        _, cond_sigma = fit_gjr_garch(self.portfolio_returns)
-
-        # Shift conditional sigma by 1 to maintain strictly out-of-sample alignment: sigma_t forecasts r_t
-        forecast_sigma = cond_sigma[lookback_window - 1 : -1]
+        alpha = 1.0 - self.confidence_level
+        forecast_sigma, _ = _rolling_gjr_forecasts(
+            self.portfolio_returns, lookback_window, refit_every, alpha
+        )
         realized_returns = self.portfolio_returns[lookback_window:]
 
         z_score = float(stats.norm.ppf(self.confidence_level))
@@ -258,38 +349,25 @@ class PortfolioVaR:
     def run_fhs_out_of_sample_backtest(
         self,
         lookback_window: int = 252,
+        refit_every: int = 21,
     ) -> tuple[BacktestResult, npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-        """Executes Filtered Historical Simulation (FHS) backtest combining GJR-GARCH(1,1)
+        """Executes Filtered Historical Simulation (FHS) backtest.
 
-        conditional volatility with empirical standardized residual quantiles.
+        Combines rolling-refit GJR-GARCH(1,1) conditional volatility with the empirical
+        quantile of standardized residuals from the same trailing training window.
         """
-        from stress_engine.volatility import fit_gjr_garch
-
         if self.portfolio_returns is None:
             self.run_analysis()
 
         assert self.portfolio_returns is not None
-        _, cond_sigma = fit_gjr_garch(self.portfolio_returns)
-
-        # De-volatilize returns into standardized innovations
-        standardized_residuals = self.portfolio_returns / np.maximum(cond_sigma, 1e-8)
-
-        # Stride training windows over standardized residuals to compute rolling empirical tail quantiles
-        # Shape: (T - W, W)
-        res_windows = np.lib.stride_tricks.sliding_window_view(
-            standardized_residuals[:-1], window_shape=lookback_window
-        )
-
         alpha = 1.0 - self.confidence_level
-        # Empirical innovations quantile along lookback window: vector of length T - W
-        empirical_q = np.percentile(res_windows, alpha * 100.0, axis=1)
-
-        # Strictly out-of-sample sigma forecast
-        forecast_sigma = cond_sigma[lookback_window - 1 : -1]
+        forecast_sigma, std_quantile = _rolling_gjr_forecasts(
+            self.portfolio_returns, lookback_window, refit_every, alpha
+        )
         realized_returns = self.portfolio_returns[lookback_window:]
 
-        # Dynamic FHS threshold in return space (negative loss cutoff)
-        var_thresholds = empirical_q * forecast_sigma
+        # Negative loss cutoff: empirical standardized quantile scaled by forecast sigma
+        var_thresholds = std_quantile * forecast_sigma
 
         backtest = run_full_var_backtest(
             returns=realized_returns,
@@ -328,12 +406,14 @@ class PortfolioVaR:
 
 
 def export_descriptive_statistics(
-    portfolio_list: list, output_dir: str | Path = "data/output"
+    portfolio_list: list,
+    output_dir: str | Path = "data/output",
+    lookback_window: int = 252,
 ) -> pd.DataFrame:
-    """
-    Computes vectorized descriptive statistics and out-of-sample exception
-    counts for multiple portfolios, exporting the master summary to CSV
-    for Week 10 MS Excel chart generation.
+    """Computes descriptive statistics and out-of-sample breach counts for each portfolio.
+
+    Statistics are computed on the portfolio return series, not the per-asset matrix.
+    The master summary is written to CSV in ``output_dir``.
     """
     path = Path(output_dir)
     path.mkdir(parents=True, exist_ok=True)
@@ -341,52 +421,38 @@ def export_descriptive_statistics(
     summary_records = []
 
     for port in portfolio_list:
-        # Ensure data is downloaded and returns are computed if not already done
         if port.returns is None or port.returns.empty:
             port.run_analysis()
+        if port.portfolio_returns is None:
+            port.compute_portfolio_returns()
 
-        # Pull returns using zero-copy contiguous access
-        returns: NDArray[np.float64] = port.returns.to_numpy(
-            dtype=np.float64, copy=False
+        portfolio_returns = port.portfolio_returns
+        assert portfolio_returns is not None
+
+        stats_row = summarize_return_series(
+            portfolio_returns, log_returns=(port.return_method == "log")
         )
 
-        # Vectorized higher-order moments & metrics
-        mean_ret = float(np.mean(returns))
-        vol_ann = float(np.std(returns, ddof=1) * np.sqrt(252))
-
-        # Higher-order standardized moments (skewness and excess kurtosis)
-        std_dev = np.std(returns, ddof=1)
-        z_scores = (returns - mean_ret) / std_dev
-        skewness = float(np.mean(z_scores**3))
-        excess_kurtosis = float(np.mean(z_scores**4) - 3.0)
-
-        # Maximum Drawdown calculation via cumulative product vectorization
-        wealth_index = 1.0 + np.cumsum(returns)
-        peak = np.maximum.accumulate(wealth_index)
-        drawdown = (wealth_index - peak) / peak
-        max_drawdown = float(np.min(drawdown))
-
-        # Run out-of-sample backtests to capture exact breach counts[cite: 1]
         hist_bt, _, _ = port.run_rolling_out_of_sample_backtest(
-            lookback_window=252, method="historical"
+            lookback_window=lookback_window, method="historical"
         )
         param_bt, _, _ = port.run_rolling_out_of_sample_backtest(
-            lookback_window=252, method="parametric"
+            lookback_window=lookback_window, method="parametric"
         )
         ewma_bt, _, _ = port.run_ewma_out_of_sample_backtest(
-            lookback_window=252, decay_factor=0.94
+            lookback_window=lookback_window, decay_factor=0.94
         )
-        garch_bt, _, _ = port.run_gjr_garch_out_of_sample_backtest(lookback_window=252)
-        fhs_bt, _, _ = port.run_fhs_out_of_sample_backtest(lookback_window=252)
+        garch_bt, _, _ = port.run_gjr_garch_out_of_sample_backtest(
+            lookback_window=lookback_window
+        )
+        fhs_bt, _, _ = port.run_fhs_out_of_sample_backtest(
+            lookback_window=lookback_window
+        )
 
         record = {
             "Portfolio": port.name,
-            "Observations": len(returns),
-            "Daily Mean Return": mean_ret,
-            "Annualized Volatility": vol_ann,
-            "Skewness": skewness,
-            "Excess Kurtosis": excess_kurtosis,
-            "Maximum Drawdown": max_drawdown,
+            "Observations": int(portfolio_returns.size),
+            **stats_row,
             "Hist VaR Breaches": int(hist_bt.total_exceptions),
             "Param VaR Breaches": int(param_bt.total_exceptions),
             "EWMA Breaches": int(ewma_bt.total_exceptions),

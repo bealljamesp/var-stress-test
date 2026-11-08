@@ -1,5 +1,4 @@
 """Publication-grade visualization engine for Value at Risk backtest diagnostics
-
 and 4D macroeconomic stress tensors.
 """
 
@@ -8,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 if TYPE_CHECKING:
     from stress_engine.portfolio import PortfolioVaR
@@ -25,6 +25,8 @@ plt.rcParams.update(
     }
 )
 
+DEFAULT_RESULTS_PATH = "data/raw/synthetic_4d_monte_carlo_results.parquet"
+
 
 def plot_var_backtest_diagnostics(
     portfolio: "PortfolioVaR",
@@ -32,19 +34,20 @@ def plot_var_backtest_diagnostics(
     output_filename: str | Path | None = None,
     output_dir: str | Path = "data/output",
 ) -> list[Path]:
-    """Generates individual publication-grade diagnostic figures for all five
+    """Generates one diagnostic figure per risk model (five in total) for a portfolio.
 
-    risk models across the portfolio, yielding 10 total standalone charts.
+    Plotted returns are the portfolio return series, aligned to the same out-of-sample
+    dates as each model's VaR threshold.
     """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     clean_portfolio_name = portfolio.name.split(" - ")[-1].lower().replace(" ", "_")
-    exported_paths = []
+    exported_paths: list[Path] = []
 
     models_config = {
         "rolling_historical": {
-            "title": "Rolling Historical Simulation (252-Day)",
+            "title": f"Rolling Historical Simulation ({lookback_window}-Day)",
             "color": "#e67e22",
             "runner": lambda: portfolio.run_rolling_out_of_sample_backtest(
                 lookback_window=lookback_window, method="historical"
@@ -81,12 +84,13 @@ def plot_var_backtest_diagnostics(
     }
 
     for model_key, config in models_config.items():
-        bt_res, _, var_series = config["runner"]()
+        bt_res, realized_returns, var_series = config["runner"]()
 
-        out_of_sample_dates = portfolio.returns.index[-len(var_series) :]
-        returns = portfolio.returns.iloc[-len(var_series) :].dot(portfolio.weights)
-        if not isinstance(returns, np.ndarray):
-            returns = returns.to_numpy(dtype=np.float64, copy=False)
+        # Runners set portfolio_returns; the out-of-sample tail has the same length as var_series
+        assert portfolio.portfolio_returns is not None
+        n_oos = len(var_series)
+        out_of_sample_dates = portfolio.returns.index[-n_oos:]
+        returns = np.asarray(realized_returns, dtype=np.float64)
 
         fig, ax = plt.subplots(figsize=(12, 6), dpi=300)
 
@@ -141,25 +145,49 @@ def plot_var_backtest_diagnostics(
 
 
 def plot_monte_carlo_drawdown_surface(
+    results: pd.DataFrame | None = None,
     output_filename: str | Path = "data/plots/stress_matrix_4d_surface.png",
+    results_path: str | Path = DEFAULT_RESULTS_PATH,
 ) -> Path:
-    """Generates the 4D Monte Carlo macroeconomic stress surface matrix visualization."""
+    """Plots distress probability over the volatility x shock-severity plane.
+
+    Reads the Monte Carlo node results (from ``results`` or ``results_path``). The
+    tail-tier and asymmetry dimensions are averaged out, so the surface is the mean
+    over those two dimensions for each (volatility, shock) pair.
+    """
+    if results is None:
+        results = pd.read_parquet(results_path)
+
+    required = {"Volatility", "Shock_Severity", "Distress_Probability"}
+    missing = required - set(results.columns)
+    if missing:
+        raise ValueError(f"Monte Carlo results are missing columns: {sorted(missing)}")
+
+    grid = (
+        results.groupby(["Shock_Severity", "Volatility"])["Distress_Probability"]
+        .mean()
+        .unstack("Volatility")
+        .sort_index()
+    )
+    vol_vals = grid.columns.to_numpy(dtype=np.float64)
+    shock_vals = grid.index.to_numpy(dtype=np.float64)
+    vols, shocks = np.meshgrid(vol_vals, shock_vals)
+    distress = grid.to_numpy(dtype=np.float64)
+
     path = Path(output_filename)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     fig = plt.figure(figsize=(10, 8), dpi=300)
     ax = fig.add_subplot(projection="3d")
 
-    vol_grid = np.array([0.10, 0.20, 0.35])
-    shock_grid = np.array([-0.15, -0.30, -0.50])
-    vols, shocks = np.meshgrid(vol_grid, shock_grid)
-    distress_prob = 1.0 / (1.0 + np.exp(-(vols * 10.0 + shocks * 5.0)))
-
     surf = ax.plot_surface(
-        vols, shocks, distress_prob, cmap="viridis", edgecolor="none", alpha=0.85
+        vols, shocks, distress, cmap="viridis", edgecolor="none", alpha=0.85
     )
     ax.set_title(
-        "4D Monte Carlo Macroeconomic Stress Matrix", fontsize=12, fontweight="bold"
+        "4D Monte Carlo Macroeconomic Stress Matrix\n"
+        "(averaged over tail tier and asymmetry)",
+        fontsize=12,
+        fontweight="bold",
     )
     ax.set_xlabel("Annualized Volatility (sigma)", fontsize=10)
     ax.set_ylabel("Exogenous Shock Severity", fontsize=10)
