@@ -169,7 +169,9 @@ def plot_monte_carlo_drawdown_surface(
     grid_meta, _, _, _, _ = build_parametric_grid_arrays()
     numeric = grid_meta[["Institution_Key", "annual_vol", "base_shock"]]
 
-    merged = results.merge(numeric, on="Institution_Key", how="inner", validate="one_to_one")
+    merged = results.merge(
+        numeric, on="Institution_Key", how="inner", validate="one_to_one"
+    )
     if len(merged) != len(results):
         raise ValueError(
             f"Only {len(merged)} of {len(results)} result rows matched the parameter grid"
@@ -211,3 +213,150 @@ def plot_monte_carlo_drawdown_surface(
 
     print(f"[+] Saved Monte Carlo Drawdown Surface: {path}")
     return path
+
+
+def plot_var_aggregate_panels(
+    portfolio: "PortfolioVaR",
+    lookback_window: int = 252,
+    output_dir: str | Path = "data/output",
+) -> Path:
+    """Three stacked panels for one portfolio, using the same backtests as main.py.
+
+    Panel A: rolling historical VaR (static window, no reset after a crash).
+    Panel B: dynamic EWMA and GJR-GARCH VaR, with each model's breaches marked.
+    Panel C: filtered historical simulation (FHS) VaR.
+    Breach counts and test p-values in each title come from the same runs.
+    """
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    hist_bt, realized, hist_thr = portfolio.run_rolling_out_of_sample_backtest(
+        lookback_window=lookback_window, method="historical"
+    )
+    ewma_bt, _, ewma_thr = portfolio.run_ewma_out_of_sample_backtest(
+        lookback_window=lookback_window, decay_factor=0.94
+    )
+    gjr_bt, _, gjr_thr = portfolio.run_gjr_garch_out_of_sample_backtest(
+        lookback_window=lookback_window
+    )
+    fhs_bt, _, fhs_thr = portfolio.run_fhs_out_of_sample_backtest(
+        lookback_window=lookback_window
+    )
+
+    assert portfolio.returns is not None
+    dates = portfolio.returns.index[-realized.size :]
+    returns_pct = np.asarray(realized, dtype=np.float64) * 100.0
+    n_obs = realized.size
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 11), dpi=200, sharex=True)
+
+    def base(ax, thr, color, label, style="-"):
+        ax.plot(
+            dates,
+            returns_pct,
+            color="#7f8c8d",
+            alpha=0.5,
+            lw=0.9,
+            label="Daily returns (%)",
+        )
+        ax.plot(dates, thr * 100.0, color=color, lw=1.6, ls=style, label=label)
+        ax.set_ylabel("Log return (%)", fontsize=10)
+        ax.legend(
+            loc="lower left",
+            fontsize=9,
+            frameon=True,
+            facecolor="white",
+            framealpha=0.9,
+        )
+
+    def marks(ax, bt, thr, marker, color, label):
+        mask = realized < thr
+        ax.scatter(
+            dates[mask],
+            returns_pct[mask],
+            marker=marker,
+            color=color,
+            s=28,
+            zorder=5,
+            label=label,
+        )
+
+    # Panel A
+    ax = axes[0]
+    base(ax, hist_thr, "#e67e22", "Rolling historical VaR (95%, 252-day window)")
+    marks(
+        ax, hist_bt, hist_thr, "o", "#c0392b", f"Breaches ({hist_bt.total_exceptions})"
+    )
+    ax.set_title(
+        f"Panel A: Rolling historical | {hist_bt.total_exceptions} of {n_obs} breaches | "
+        f"Kupiec p={hist_bt.kupiec_p_value:.4f} | Christoffersen p={hist_bt.christoffersen_p_value:.4f}",
+        fontsize=11,
+        fontweight="bold",
+        loc="left",
+    )
+    ax.legend(
+        loc="lower left", fontsize=9, frameon=True, facecolor="white", framealpha=0.9
+    )
+
+    # Panel B
+    ax = axes[1]
+    base(ax, ewma_thr, "#2980b9", "Dynamic EWMA VaR (lambda=0.94)")
+    ax.plot(
+        dates,
+        gjr_thr * 100.0,
+        color="#8e44ad",
+        lw=1.4,
+        ls="-.",
+        label="Dynamic GJR-GARCH VaR",
+    )
+    marks(
+        ax,
+        ewma_bt,
+        ewma_thr,
+        "o",
+        "#c0392b",
+        f"EWMA breaches ({ewma_bt.total_exceptions})",
+    )
+    marks(
+        ax, gjr_bt, gjr_thr, "x", "#8e44ad", f"GJR breaches ({gjr_bt.total_exceptions})"
+    )
+    ax.set_title(
+        f"Panel B: Dynamic volatility | EWMA {ewma_bt.total_exceptions} breaches, "
+        f"p={ewma_bt.christoffersen_p_value:.4f} (independence) | "
+        f"GJR-GARCH {gjr_bt.total_exceptions} breaches, p={gjr_bt.christoffersen_p_value:.4f} (independence)",
+        fontsize=11,
+        fontweight="bold",
+        loc="left",
+    )
+    ax.legend(
+        loc="lower left", fontsize=9, frameon=True, facecolor="white", framealpha=0.9
+    )
+
+    # Panel C
+    ax = axes[2]
+    base(ax, fhs_thr, "#27ae60", "Filtered historical simulation (FHS) VaR")
+    marks(
+        ax, fhs_bt, fhs_thr, "o", "#c0392b", f"FHS breaches ({fhs_bt.total_exceptions})"
+    )
+    ax.set_title(
+        f"Panel C: Filtered historical simulation | {fhs_bt.total_exceptions} of {n_obs} breaches | "
+        f"Kupiec p={fhs_bt.kupiec_p_value:.4f} | Christoffersen p={fhs_bt.christoffersen_p_value:.4f}",
+        fontsize=11,
+        fontweight="bold",
+        loc="left",
+    )
+    ax.set_xlabel("Trading date", fontsize=10)
+
+    fig.suptitle(
+        f"{portfolio.name}: 95% VaR backtests, {n_obs} out-of-sample days",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+
+    clean_name = portfolio.name.split(" - ")[-1].lower().replace(" ", "_")
+    filename = out_dir / f"var_panels_{clean_name}.png"
+    fig.savefig(filename, format="png", bbox_inches="tight")
+    plt.close(fig)
+    print(f"[+] Saved aggregate panel figure: {filename}")
+    return filename

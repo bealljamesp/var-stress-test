@@ -1,6 +1,11 @@
 """Main entrypoint for historical VaR analysis and stress testing pipelines."""
 
 from stress_engine.portfolio import PortfolioVaR, export_descriptive_statistics
+from stress_engine.visualization import (
+    plot_monte_carlo_drawdown_surface,
+    plot_var_aggregate_panels,
+    plot_var_backtest_diagnostics,
+)
 
 
 def main() -> None:
@@ -25,7 +30,7 @@ def main() -> None:
         ),
     ]
 
-    # Generate Week 10 Descriptive Analysis Table CSV for Excel
+    # Descriptive analysis table for Excel
     export_descriptive_statistics(portfolios)
 
     for port in portfolios:
@@ -43,7 +48,7 @@ def main() -> None:
             f"  In-Sample Param VaR:       {metrics['param_pct'] * 100:.2f}%  (${metrics['param_dollar']:,.2f})"
         )
 
-        # 252-day Rolling Out-of-Sample Backtests
+        # 252-day rolling out-of-sample backtests
         hist_bt, _, _ = port.run_rolling_out_of_sample_backtest(
             lookback_window=252, method="historical"
         )
@@ -81,7 +86,7 @@ def main() -> None:
             f"{'REJECT H0 (Temporal clustering detected)' if param_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
-        # 3. EWMA Dynamic Volatility Out-of-Sample Backtest
+        # 3. EWMA dynamic volatility
         ewma_bt, _, _ = port.run_ewma_out_of_sample_backtest(
             lookback_window=252, decay_factor=0.94
         )
@@ -99,7 +104,7 @@ def main() -> None:
             f"{'REJECT H0 (Temporal clustering detected)' if ewma_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
-        # 4. GJR-GARCH(1,1) Asymmetric Dynamic Out-of-Sample Backtest
+        # 4. GJR-GARCH(1,1) asymmetric dynamic backtest
         garch_bt, _, _ = port.run_gjr_garch_out_of_sample_backtest(lookback_window=252)
 
         print("  4. Dynamic GJR-GARCH(1,1) (Asymmetric Leverage):")
@@ -115,7 +120,7 @@ def main() -> None:
             f"{'REJECT H0 (Temporal clustering detected)' if garch_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
-        # 5. Filtered Historical Simulation (FHS - GJR-GARCH + Empirical Tail)
+        # 5. Filtered historical simulation
         fhs_bt, _, _ = port.run_fhs_out_of_sample_backtest(lookback_window=252)
 
         print("  5. Filtered Historical Simulation (FHS / GJR-GARCH Tail):")
@@ -131,19 +136,12 @@ def main() -> None:
             f"{'REJECT H0 (Temporal clustering detected)' if fhs_bt.christoffersen_reject else 'ACCEPT H0 (Exceptions are independent)'}"
         )
 
-        # Generate Publication-Grade Diagnostic Charts
-        from stress_engine.visualization import plot_var_backtest_diagnostics
+        # Charts: one three-panel figure for the presentation, and per-model
+        # diagnostics kept for backup
+        plot_var_aggregate_panels(portfolio=port, lookback_window=252)
+        plot_var_backtest_diagnostics(portfolio=port, lookback_window=252)
 
-        clean_name = port.name.split(" - ")[-1].lower().replace(" ", "_")
-        plot_var_backtest_diagnostics(
-            portfolio=port,
-            lookback_window=252,
-            output_filename=f"data/output/var_diagnostics_{clean_name}.png",
-        )
-
-    # Generate 4D Monte Carlo Drawdown Surface Chart
-    from stress_engine.visualization import plot_monte_carlo_drawdown_surface
-
+    # 4D Monte Carlo drawdown surface
     plot_monte_carlo_drawdown_surface()
 
 
