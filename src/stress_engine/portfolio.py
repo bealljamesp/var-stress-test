@@ -1,5 +1,6 @@
 """Portfolio Value-at-Risk (VaR) calculation and risk analysis engine."""
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from stress_engine.backtest import BacktestResult, run_full_var_backtest
 from stress_engine.volatility import compute_ewma_volatility, fit_gjr_garch
 
 TRADING_DAYS = 252
+SNAPSHOT_DIR = Path("data/raw/snapshots")
 
 
 def summarize_return_series(
@@ -145,16 +147,48 @@ class PortfolioVaR:
         self.return_method: str = "log"
         self.portfolio_returns: npt.NDArray[np.float64] | None = None
 
-    def download_data(self) -> pd.DataFrame:
-        """Downloads historical market data for the target tickers."""
-        self.market_data = yf.download(
+    def snapshot_path(self) -> Path:
+        """Cache file for this portfolio's price snapshot, keyed by tickers and dates."""
+        key = f"{'_'.join(self.tickers)}_{self.start_date}_{self.end_date}"
+        return SNAPSHOT_DIR / f"{key}.pkl"
+
+    def download_data(self, refresh: bool = False) -> pd.DataFrame:
+        """Loads the cached price snapshot, or downloads and caches it if none exists.
+
+        Yahoo Finance revises adjusted prices over time, so a fresh download can change
+        results near a threshold. Pass refresh=True only when a new snapshot is wanted,
+        and then record its fingerprint.
+        """
+        path = self.snapshot_path()
+        if path.exists() and not refresh:
+            self.market_data = pd.read_pickle(path)
+            print(f"[data] Loaded cached price snapshot: {path}")
+            return self.market_data
+
+        downloaded = yf.download(
             self.tickers,
             start=self.start_date,
             end=self.end_date,
             progress=False,
             auto_adjust=False,
         )
+        if downloaded.empty:
+            raise ValueError(
+                f"No price data returned for {self.tickers} between "
+                f"{self.start_date} and {self.end_date}."
+            )
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        downloaded.to_pickle(path)
+        self.market_data = downloaded
+        print(f"[data] Downloaded and cached new price snapshot: {path}")
         return self.market_data
+
+    def data_fingerprint(self) -> str:
+        """Short hash of the portfolio return series, for reporting which snapshot was used."""
+        if self.portfolio_returns is None:
+            raise ValueError("Portfolio returns not computed.")
+        return hashlib.sha256(self.portfolio_returns.tobytes()).hexdigest()[:12]
 
     def calculate_returns(self, method: str = "log") -> pd.DataFrame:
         """Calculates asset returns using vectorized pandas transformations."""
@@ -451,6 +485,7 @@ def export_descriptive_statistics(
 
         record = {
             "Portfolio": port.name,
+            "Data Fingerprint": port.data_fingerprint(),
             "Observations": int(portfolio_returns.size),
             **stats_row,
             "Hist VaR Breaches": int(hist_bt.total_exceptions),
