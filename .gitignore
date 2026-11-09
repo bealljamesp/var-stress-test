@@ -217,6 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# .npy
-*.npy
-data/raw/master_path_tensor.npy
+# Raw data snapshots and numpy arrays
+data/raw/snapshots/
+data/raw/*.npy
+
