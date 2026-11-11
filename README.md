@@ -1,7 +1,7 @@
 # Quantitative Risk & Liquidity Stress Testing Engine (`stress_engine`)
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/pytest-35%20passed-brightgreen.svg)]()
+[![CI](https://github.com/bealljamesp/var-stress-test/actions/workflows/tests.yml/badge.svg)](https://github.com/bealljamesp/var-stress-test/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code Style](https://img.shields.io/badge/typing-PEP%20585%20%7C%20604%20%7C%20646-informational.svg)]()
 
@@ -48,7 +48,8 @@ var-stress-test/
 │   └── check_presample.py             # Verifies the presample variance convention against arch
 ├── tests/
 │   ├── test_ingestion.py              # 12 ingestion invariants (offline, synthetic HTML)
-│   └── test_stress_engine.py          # 23 statistical, alignment, and contract invariants
+│   ├── test_stress_engine.py          # 26 statistical, alignment, and contract invariants
+│   └── test_gjr_arch.py               # GJR-GARCH fit checked against the arch package
 ├── data/
 │   ├── patches/                       # Normalized distressed-entity CSVs and manifest.csv
 │   ├── output/                        # Descriptive summary CSV and VaR diagnostic charts
@@ -241,7 +242,7 @@ The stress surface plots distress probability over the volatility and shock-seve
 ```
 # Clone the repository
 git clone https://github.com/bealljamesp/var-stress-test
-cd VaR-Simulation-Stress-Test
+cd var-stress-test
 
 # Create and activate Conda environment
 conda create -n var-simulation python=3.12 -y
@@ -301,7 +302,7 @@ The tests use synthetic data and do not download prices, so they run offline. Th
 
 ## Technical Invariants Tested
 
-### The test suite asserts 35 mechanical, statistical, and data-contract guarantees across `tests/`:
+### The test suite asserts mechanical, statistical, and data-contract guarantees across `tests/`:
 
 * **Kupiec POF Bounds:** Verifies statistical non-rejection under perfect calibration (50 / 1000 breaches) and deterministic rejection under severe underestimation (150 / 1000 breaches).
 
