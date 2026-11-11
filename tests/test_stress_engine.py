@@ -317,6 +317,14 @@ def test_expected_shortfall_strictly_exceeds_var() -> None:
     assert es > var_mag
 
 
+def test_basel_traffic_light_rejects_other_settings() -> None:
+    # The BCBS zone table is defined only for 250 observations at 99%. Anything else must fail loudly.
+    with pytest.raises(ValueError, match="250 observations at 99%"):
+        evaluate_basel_traffic_light(exceptions=3, total_observations=502)
+    with pytest.raises(ValueError, match="250 observations at 99%"):
+        evaluate_basel_traffic_light(exceptions=3, total_observations=250, confidence_level=0.95)
+
+
 def test_basel_traffic_light_regulatory_boundaries() -> None:
     # 250 observations at 99% VaR:
     # Green zone: 0 to 4

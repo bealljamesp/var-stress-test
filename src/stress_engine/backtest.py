@@ -216,10 +216,18 @@ def evaluate_basel_traffic_light(
     total_observations: int = 250,
     confidence_level: float = 0.99,
 ) -> BaselTrafficLightResult:
-    """Classifies a model into the BCBS Basel Traffic Light zones (Green, Yellow, Red)
+    """Classifies a model into the BCBS Basel Traffic Light zones (Green, Yellow, Red).
 
-    using the binomial cumulative density function at 99% 1-day VaR.
+    The zone cutoffs and capital multipliers are the BCBS table for 250 observations
+    at 99% 1-day VaR. Other sample sizes or confidence levels raise an error, because
+    the table does not apply to them. The cumulative probability is the binomial CDF
+    for the same setting.
     """
+    if total_observations != 250 or not np.isclose(confidence_level, 0.99):
+        raise ValueError(
+            "The BCBS traffic-light table applies only to 250 observations at 99% VaR "
+            f"(got {total_observations} observations at {confidence_level:.2%})."
+        )
     p = 1.0 - confidence_level
     cum_prob = float(stats.binom.cdf(exceptions, total_observations, p))
 
