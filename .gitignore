@@ -221,3 +221,5 @@ __marimo__/
 data/raw/snapshots/
 data/raw/*.npy
 
+# gitingest
+gitingest/
