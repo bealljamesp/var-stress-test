@@ -156,7 +156,7 @@ def plot_monte_carlo_drawdown_surface(
     The saved Monte Carlo results store tier labels (for example 'Vol-High'), not the
     numeric values. The numeric volatility and shock for each node come from
     build_parametric_grid_arrays(), which is the same grid the simulation used.
-    Tail tier and asymmetry are averaged out, and the title says so.
+    Tail tier is averaged out, and the title says so.
     """
     if results is None:
         results = pd.read_parquet(results_path)
@@ -166,7 +166,7 @@ def plot_monte_carlo_drawdown_surface(
     if missing:
         raise ValueError(f"Monte Carlo results are missing columns: {sorted(missing)}")
 
-    grid_meta, _, _, _, _ = build_parametric_grid_arrays()
+    grid_meta, _, _, _ = build_parametric_grid_arrays()
     numeric = grid_meta[["Institution_Key", "annual_vol", "base_shock"]]
 
     merged = results.merge(
@@ -199,7 +199,7 @@ def plot_monte_carlo_drawdown_surface(
     )
     ax.set_title(
         "4D Monte Carlo Macroeconomic Stress Matrix\n"
-        "(averaged over tail tier and asymmetry)",
+        "(averaged over tail tier; shock is a simple return on day 30)",
         fontsize=12,
         fontweight="bold",
     )
