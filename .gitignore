@@ -220,3 +220,6 @@ __marimo__/
 # Numpy arrays. Price snapshots in data/raw/snapshots/ are committed on purpose: they are the frozen inputs.
 data/raw/*.npy
 
+# Parquet tables are derived outputs. Regenerate them with the scripts in the README.
+*.parquet
+
