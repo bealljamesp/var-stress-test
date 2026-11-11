@@ -143,7 +143,9 @@ def clean_series(raw: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     """
     invalid_mask = ~(raw["Close"] > 0.0)
     invalid_dropped = int(invalid_mask.sum())
-    valid = raw.loc[~invalid_mask].sort_values("Date")
+    # Stable sort: duplicates keep their input order, so "first occurrence" is well defined.
+    # The default quicksort is not stable and can keep the later copy on larger inputs.
+    valid = raw.loc[~invalid_mask].sort_values("Date", kind="stable")
 
     duplicate_mask = valid.duplicated(subset=["Date"], keep="first")
     duplicate_dropped = int(duplicate_mask.sum())
