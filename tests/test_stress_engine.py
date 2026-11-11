@@ -338,6 +338,45 @@ def test_summary_max_drawdown_uses_compounded_simple_wealth() -> None:
     assert np.isclose(out["Maximum Drawdown"], -0.5)
 
 
+def _two_asset_prices(n: int = 60) -> pd.DataFrame:
+    # Mimics yfinance's multi-ticker layout: columns are (Price field, Ticker)
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    tickers = ["AAA", "BBB"]
+    prices = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.02, size=(n, 2)), axis=0))
+    cols = pd.MultiIndex.from_product([["Adj Close"], tickers])
+    return pd.DataFrame(prices, index=idx, columns=cols)
+
+
+def test_portfolio_return_is_weighted_simple_returns() -> None:
+    # Aggregation identity: portfolio simple return = sum_i w_i * R_i (daily rebalanced)
+    weights = np.array([0.7, 0.3])
+    port = PortfolioVaR(
+        name="Identity", tickers=["AAA", "BBB"], weights=weights,
+        start_date="2020-01-01", end_date="2020-03-31",
+    )
+    port.market_data = _two_asset_prices()
+
+    assert port.return_method == "simple"
+    port.calculate_returns()
+    got = port.compute_portfolio_returns()
+
+    expected = port.market_data["Adj Close"].pct_change().dropna().to_numpy() @ weights
+    assert np.allclose(got, expected, rtol=0, atol=1e-12)
+
+
+def test_portfolio_aggregation_rejects_log_returns() -> None:
+    # Summing log returns across assets is not the portfolio log return, so refuse it
+    port = PortfolioVaR(
+        name="Guard", tickers=["AAA", "BBB"], weights=[0.5, 0.5],
+        start_date="2020-01-01", end_date="2020-03-31",
+    )
+    port.market_data = _two_asset_prices()
+    port.calculate_returns(method="log")
+    with pytest.raises(ValueError, match="requires simple returns"):
+        port.compute_portfolio_returns()
+
+
 def test_export_descriptive_statistics_writes_to_requested_dir(tmp_path) -> None:
     rng = np.random.default_rng(3)
     n = 400

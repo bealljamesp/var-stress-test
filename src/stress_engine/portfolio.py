@@ -144,7 +144,7 @@ class PortfolioVaR:
 
         self.market_data: pd.DataFrame | None = None
         self.returns: pd.DataFrame | None = None
-        self.return_method: str = "log"
+        self.return_method: str = "simple"
         self.portfolio_returns: npt.NDArray[np.float64] | None = None
 
     def snapshot_path(self) -> Path:
@@ -190,8 +190,15 @@ class PortfolioVaR:
             raise ValueError("Portfolio returns not computed.")
         return hashlib.sha256(self.portfolio_returns.tobytes()).hexdigest()[:12]
 
-    def calculate_returns(self, method: str = "log") -> pd.DataFrame:
-        """Calculates asset returns using vectorized pandas transformations."""
+    def calculate_returns(self, method: str = "simple") -> pd.DataFrame:
+        """Calculates asset returns using vectorized pandas transformations.
+
+        Defaults to simple returns. The portfolio return is ``weights @ asset_returns``,
+        which is exact only for simple returns under constant weights (a portfolio
+        rebalanced to target every day). Summing log returns across assets gives the
+        log of a weighted geometric mean, not the log of the portfolio return, so it
+        is not used for aggregation. See ``compute_portfolio_returns``.
+        """
         if self.market_data is None or self.market_data.empty:
             raise ValueError("Market data is empty. Call download_data() first.")
 
@@ -224,7 +231,17 @@ class PortfolioVaR:
         return self.returns
 
     def compute_portfolio_returns(self) -> npt.NDArray[np.float64]:
-        """Computes portfolio returns via zero-copy NumPy matrix dot product."""
+        """Computes portfolio returns as the weighted sum of asset simple returns.
+
+        Under constant weights (daily rebalancing to target), the portfolio simple return
+        is exactly ``sum_i w_i * R_i``. This method requires simple returns; calling it
+        after a log-return calculation raises an error instead of silently mixing units.
+        """
+        if self.return_method != "simple":
+            raise ValueError(
+                "Portfolio aggregation requires simple returns. Call "
+                "calculate_returns(method='simple') first."
+            )
         if self.returns is None or self.returns.empty:
             raise ValueError("Returns not computed. Call calculate_returns() first.")
 
@@ -304,7 +321,7 @@ class PortfolioVaR:
     def run_analysis(self) -> dict[str, float | str]:
         """Executes the pipeline and returns a summary dictionary of metrics."""
         self.download_data()
-        self.calculate_returns(method="log")
+        self.calculate_returns(method="simple")
         self.compute_portfolio_returns()
 
         hist_var = self.calculate_historical_var()
