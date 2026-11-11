@@ -40,6 +40,7 @@ def main() -> None:
         print("=" * 65)
 
         metrics = port.run_analysis()
+        print(f"Input price fingerprint:     {port.input_fingerprint()}  ({port.snapshot_path()})")
         print(f"Confidence Level:            {port.confidence_level * 100:.1f}%")
         print(
             f"  In-Sample Hist VaR:        {metrics['hist_pct'] * 100:.2f}%  (${metrics['hist_dollar']:,.2f})"

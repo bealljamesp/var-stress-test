@@ -63,8 +63,14 @@ def run_comprehensive_stress_engine(
     n_paths: int = 5000,
     n_days: int = 90,
     random_seed: int = 42,
+    output_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, npt.NDArray[np.float32]]:
-    """Simulates the entire 4D parameter space simultaneously via tensor broadcasting."""
+    """Simulates the entire 4D parameter space simultaneously via tensor broadcasting.
+
+    Writes the metrics parquet and the path tensor to ``output_dir`` (default: the
+    project's ``data/raw``). Tests pass a temporary directory so they never touch
+    tracked files.
+    """
     start_time = time.time()
     df_meta, vol_3d, tail_3d, asym_3d, shock_3d = build_parametric_grid_arrays()
     n_nodes = len(df_meta)
@@ -121,9 +127,11 @@ def run_comprehensive_stress_engine(
     ]
     df_results = df_meta.loc[:, output_columns]
 
-    # Save artifacts back to data/raw/
-    project_root = Path(__file__).resolve().parents[2]
-    output_dir = project_root / "data" / "raw"
+    # Save artifacts to output_dir (default: data/raw/ in the project root)
+    if output_dir is None:
+        project_root = Path(__file__).resolve().parents[2]
+        output_dir = project_root / "data" / "raw"
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df_output_path = output_dir / "synthetic_4d_monte_carlo_results.parquet"

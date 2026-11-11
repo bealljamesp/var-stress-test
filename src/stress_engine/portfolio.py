@@ -184,8 +184,28 @@ class PortfolioVaR:
         print(f"[data] Downloaded and cached new price snapshot: {path}")
         return self.market_data
 
-    def data_fingerprint(self) -> str:
-        """Short hash of the portfolio return series, for reporting which snapshot was used."""
+    def input_fingerprint(self) -> str:
+        """Short hash of the input price data: tickers, dates, and Adj Close values.
+
+        It changes if the snapshot changes, and it does not depend on the file format or
+        on how the returns were computed. Record it with every output so a result can be
+        traced to the exact prices that produced it.
+        """
+        if self.market_data is None:
+            raise ValueError("Market data not loaded. Call download_data() first.")
+
+        md = self.market_data
+        adj = md["Adj Close"] if isinstance(md.columns, pd.MultiIndex) else md[["Adj Close"]]
+        adj = adj.loc[:, self.tickers]
+
+        h = hashlib.sha256()
+        h.update("|".join(self.tickers).encode())
+        h.update("|".join(adj.index.strftime("%Y-%m-%d")).encode())
+        h.update(np.ascontiguousarray(adj.to_numpy(dtype=np.float64)).tobytes())
+        return h.hexdigest()[:12]
+
+    def return_fingerprint(self) -> str:
+        """Short hash of the portfolio return series. Derived from the input, so it changes with the aggregation method."""
         if self.portfolio_returns is None:
             raise ValueError("Portfolio returns not computed.")
         return hashlib.sha256(self.portfolio_returns.tobytes()).hexdigest()[:12]
@@ -502,7 +522,11 @@ def export_descriptive_statistics(
 
         record = {
             "Portfolio": port.name,
-            "Data Fingerprint": port.data_fingerprint(),
+            # Input prices are absent when returns are supplied directly (e.g., in tests)
+            "Input Fingerprint": (
+                port.input_fingerprint() if port.market_data is not None else "not-loaded"
+            ),
+            "Return Fingerprint": port.return_fingerprint(),
             "Observations": int(portfolio_returns.size),
             **stats_row,
             "Hist VaR Breaches": int(hist_bt.total_exceptions),
