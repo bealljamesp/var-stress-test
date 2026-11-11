@@ -1,4 +1,4 @@
-"""Monte Carlo Stress Testing Engine (4D Parametric Grid with Full Tensor Broadcast)."""
+"""Monte Carlo Stress Testing Engine (3D Parametric Grid with Full Tensor Broadcast)."""
 
 import itertools
 import time
@@ -14,49 +14,50 @@ def build_parametric_grid_arrays() -> tuple[
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
     npt.NDArray[np.float32],
-    npt.NDArray[np.float32],
 ]:
-    """Generates the Cartesian parameter space, returning metadata and 3D broadcastable parameter vectors."""
+    """Generates the Cartesian parameter space: volatility x tail thickness x shock.
+
+    Returns metadata and three broadcastable parameter arrays of shape (K, 1, 1).
+    ``base_shock`` is a simple return: -0.30 means the price falls 30% on day 30.
+    """
     vol_tiers = {"Vol-Low": 0.10, "Vol-Norm": 0.20, "Vol-High": 0.35}
     tail_tiers = {"Tail-Fat": 3.5, "Tail-Norm": 8.0, "Tail-Thin": 30.0}
-    asym_tiers = {"Asym-Low": 0.01, "Asym-Norm": 0.05, "Asym-High": 0.15}
     shock_tiers = {"Shock-Mild": -0.15, "Shock-Mod": -0.30, "Shock-Sev": -0.50}
 
     product_generator = itertools.product(
         vol_tiers.items(),
         tail_tiers.items(),
-        asym_tiers.items(),
         shock_tiers.items(),
     )
 
     records = [
         {
             "Node_Index": idx,
-            "Institution_Key": f"{v_k}_{t_k}_{a_k}_{s_k}",
+            "Institution_Key": f"{v_k}_{t_k}_{s_k}",
             "Volatility": v_k,
             "annual_vol": v_v,
             "Tail_Tier": t_k,
             "t_df": t_v,
-            "Asymmetry": a_k,
-            "gjr_gamma": a_v,
             "Shock_Severity": s_k,
             "base_shock": s_v,
         }
-        for idx, ((v_k, v_v), (t_k, t_v), (a_k, a_v), (s_k, s_v)) in enumerate(
-            product_generator
-        )
+        for idx, ((v_k, v_v), (t_k, t_v), (s_k, s_v)) in enumerate(product_generator)
     ]
 
     df_meta = pd.DataFrame(records)
 
-    # Reshape parameter arrays to (K, 1, 1) for contiguous 3D broadcasting
+    # Reshape parameter arrays to (K, 1, 1) for contiguous 3D broadcasting.
+    # The shock is stored as a log return, so the price moves by exactly base_shock.
     k_nodes = len(df_meta)
     vol_arr = df_meta["annual_vol"].to_numpy(dtype=np.float32).reshape(k_nodes, 1, 1)
     tail_arr = df_meta["t_df"].to_numpy(dtype=np.float32).reshape(k_nodes, 1, 1)
-    asym_arr = df_meta["gjr_gamma"].to_numpy(dtype=np.float32).reshape(k_nodes, 1, 1)
-    shock_arr = df_meta["base_shock"].to_numpy(dtype=np.float32).reshape(k_nodes, 1, 1)
+    shock_arr = (
+        np.log1p(df_meta["base_shock"].to_numpy(dtype=np.float64))
+        .astype(np.float32)
+        .reshape(k_nodes, 1, 1)
+    )
 
-    return df_meta, vol_arr, tail_arr, asym_arr, shock_arr
+    return df_meta, vol_arr, tail_arr, shock_arr
 
 
 def run_comprehensive_stress_engine(
@@ -65,48 +66,43 @@ def run_comprehensive_stress_engine(
     random_seed: int = 42,
     output_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, npt.NDArray[np.float32]]:
-    """Simulates the entire 4D parameter space simultaneously via tensor broadcasting.
+    """Simulates the entire parameter grid simultaneously via tensor broadcasting.
 
     Writes the metrics parquet and the path tensor to ``output_dir`` (default: the
     project's ``data/raw``). Tests pass a temporary directory so they never touch
     tracked files.
     """
     start_time = time.time()
-    df_meta, vol_3d, tail_3d, asym_3d, shock_3d = build_parametric_grid_arrays()
+    df_meta, vol_3d, tail_3d, shock_3d = build_parametric_grid_arrays()
     n_nodes = len(df_meta)
 
     print(
-        f"Simulating 4D Tensor ({n_nodes} nodes x {n_paths} paths x {n_days} days) "
+        f"Simulating tensor ({n_nodes} nodes x {n_paths} paths x {n_days} days) "
         f"via broadcasted SIMD operations..."
     )
 
     rng = np.random.default_rng(random_seed)
 
-    # 1. Vectorized diffusion generation: Shape (81, 5000, 90)
+    # 1. Vectorized diffusion generation: Shape (K, P, T)
     daily_vol = vol_3d / np.float32(np.sqrt(252.0))
-    # rng.standard_t accepts (81, 1, 1) df array and broadcasts across (81, 5000, 90)
+    # rng.standard_t accepts (K, 1, 1) df array and broadcasts across (K, P, T)
     innovations = rng.standard_t(df=tail_3d, size=(n_nodes, n_paths, n_days)).astype(
         np.float32
     )
     returns_tensor = daily_vol * innovations
 
-    # 2. Vectorized shock injection at day 30: Shape (81, 1, 1)
+    # 2. Shock injection at day 30: the same stated shock on every path of a node
     shock_day = 30
     if shock_day < n_days:
-        scaled_shock = (
-            shock_3d
-            * (np.float32(1.0) + asym_3d * np.float32(10.0))
-            * (np.float32(6.0) / tail_3d)
-        )
-        returns_tensor[:, :, shock_day] += scaled_shock[:, :, 0]
+        returns_tensor[:, :, shock_day] += shock_3d[:, :, 0]
 
-    # 3. Geometric price evolution: Shape (81, 5000, 90)
+    # 3. Geometric price evolution: Shape (K, P, T)
     price_paths = np.float32(100.0) * np.exp(np.cumsum(returns_tensor, axis=2))
 
     # 4. Maximum Drawdown Tensor Reduction
     running_max = np.maximum.accumulate(price_paths, axis=2)
     drawdowns = (price_paths - running_max) / running_max
-    max_dds = np.min(drawdowns, axis=2)  # Shape: (81, 5000)
+    max_dds = np.min(drawdowns, axis=2)  # Shape: (K, P)
 
     # 5. Summary Statistics computed across paths (axis 1)
     df_meta["Mean_Max_DD"] = np.mean(max_dds, axis=1)
@@ -119,7 +115,6 @@ def run_comprehensive_stress_engine(
         "Institution_Key",
         "Volatility",
         "Tail_Tier",
-        "Asymmetry",
         "Shock_Severity",
         "Mean_Max_DD",
         "P95_Max_DD",

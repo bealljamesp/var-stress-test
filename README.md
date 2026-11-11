@@ -7,7 +7,7 @@
 
 A quantitative risk and liquidity stress-testing engine built to institutional risk standards (Basel Committee on Banking Supervision / FRM Part 1).
 
-The engine evaluates historical portfolio drawdowns, calculates dynamic conditional Value-at-Risk (VaR) and Expected Shortfall (ES), runs formal econometric regulatory backtests, and runs vectorized Monte Carlo macroeconomic stress simulations across a 4D parametric state space ($36.45\text{M}$ path coordinates in 1.73 s, end-to-end, on the author's workstation).
+The engine evaluates historical portfolio drawdowns, calculates dynamic conditional Value-at-Risk (VaR) and Expected Shortfall (ES), runs formal econometric regulatory backtests, and runs vectorized Monte Carlo macroeconomic stress simulations across a parametric state space of 27 nodes, 5,000 paths, and 90 days ($12.15\text{M}$ path coordinates).
 
 ---
 
@@ -196,33 +196,33 @@ This is a check on three windows, not a proof of correctness across the full sam
 
 ## 4D Tensor Monte Carlo Simulation Architecture
 
-The macroeconomic stress module simulates an 81-node Cartesian parameter space across:
+The macroeconomic stress module simulates a 27-node Cartesian parameter space across:
 
 * Annualized Volatility Tiers ($\sigma_{\text{ann}}$): 10%, 20%, 35%
 
 * Student-$t$ Tail Thickness ($\nu$): 3.5 (Fat), 8.0 (Normal), 30.0 (Thin)
 
-* GJR Asymmetric Leverage ($\gamma$): 0.01, 0.05, 0.15
-
-* Exogenous Macro Shocks ($s$): -15%, -30%, -50% at $t = 30$
+* Exogenous Macro Shocks ($s$): -15%, -30%, -50%, applied as a simple return on day 30. A -30% node moves every path's price by exactly -30% on that day, before the daily noise on that day is added. The shock is applied as $\log(1 + s)$ to the log-return tensor.
 
 The grid values are chosen by hand. They are not calibrated to historical crises, so the stress surface is an illustrative sensitivity analysis, not a forecast of crisis probabilities.
 
+The simulated innovations have no leverage term, so the grid has no asymmetry parameter.
+
 Memory & Execution Profile
 
-* Tensor Dimensions: $(K=81\text{ nodes}) \times (P=5,000\text{ paths}) \times (T=90\text{ days})$
+* Tensor Dimensions: $(K=27\text{ nodes}) \times (P=5,000\text{ paths}) \times (T=90\text{ days})$
 
-* Total Points Evaluated: 36,450,000 single-precision float32 values.
+* Total Points Evaluated: 12,150,000 single-precision float32 values.
 
-* Contiguous Memory Footprint: $\approx 145.8\text{ MB}$.
+* Contiguous Memory Footprint: $\approx 48.6\text{ MB}$.
 
-* Execution Latency: 1.73 s end-to-end on the author's workstation (single run, including writing the parquet metrics and the float32 tensor to disk), using broadcasted NumPy array operations. Not measured on other hardware.
+* Execution Latency: 0.76 s for one run on the development sandbox (including writing the parquet metrics and the float32 tensor to disk), using broadcasted NumPy array operations. Not measured on other hardware.
 
 $$\mathbf{S}_{k, p, t} = 100 \cdot \exp\left( \sum_{\tau=1}^t \mathbf{R}_{k, p, \tau} \right)$$
 
 $$\mathbf{MDD}_{k, p} = \min_{t \in [1, T]} \left( \frac{\mathbf{S}_{k, p, t} - \max_{\tau \le t} \mathbf{S}_{k, p, \tau}}{\max_{\tau \le t} \mathbf{S}_{k, p, \tau}} \right)$$
 
-The stress surface plots distress probability over the volatility and shock-severity plane. Tail thickness and asymmetry are averaged out, and the figure title says so.
+The stress surface plots distress probability over the volatility and shock-severity plane. Tail thickness is averaged out, and the figure title says so.
 
 ---
 
@@ -231,7 +231,7 @@ The stress surface plots distress probability over the volatility and shock-seve
 | Artifact | Path | Description |
 | :--- | :--- | :--- |
 | **VaR Backtest Diagnostics** | `data/output/var_diagnostics_*.png` | One chart per risk model: daily returns, the VaR threshold, and the breach points, with Kupiec and Christoffersen p-values in the title. |
-| **4D Stress Surface Matrix** | `data/plots/stress_matrix_4d_surface.png` | Distress probability ($DD \le -40\%$) across annualized volatility and shock severity, averaged over tail tier and asymmetry. |
+| **4D Stress Surface Matrix** | `data/plots/stress_matrix_4d_surface.png` | Distress probability ($DD \le -40\%$) across annualized volatility and shock severity, averaged over tail tier. |
 
 ---
 
@@ -320,7 +320,7 @@ The tests use synthetic data and do not download prices, so they run offline. Th
 
 * **BCBS Basel III Boundaries:** Confirms exact regulatory traffic light zone assignments (Green: 0–4 breaches, Yellow: 5–9 breaches, Red: 10+ breaches) and corresponding capital multiplier penalties (3.00 to 4.00).
 
-* **Tensor Geometry:** Enforces valid probability bounds [0.0, 1.0], negative peak-to-trough drawdowns, and strict shape preservation across the (81, 5000, 90) float32 state space.
+* **Tensor Geometry:** Enforces valid probability bounds [0.0, 1.0], negative peak-to-trough drawdowns, and strict shape preservation across the float32 state space (checked on a small run of (27, 100, 10); the full run is (27, 5000, 90)).
 
 * **Ingestion Contracts:** Checks that raw records are parsed (quoted and unquoted prices), malformed prices are rejected, non-positive values and duplicate dates are dropped and counted, monthly and daily cadence are classified correctly, coverage is classified as full, partial, or none, and only covered entities are written.
 
