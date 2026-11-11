@@ -1,5 +1,6 @@
 """Offline tests for stress_engine.ingestion using synthetic HTML fixtures."""
 
+import numpy as np
 import pandas as pd
 
 from stress_engine.ingestion import (
@@ -66,6 +67,22 @@ def test_parse_returns_empty_frame_when_no_records() -> None:
 # =====================================================================
 # Cleaning
 # =====================================================================
+
+
+def test_clean_keeps_first_occurrence_on_large_unsorted_input() -> None:
+    # Larger than the small-array range where the default sort happens to be stable.
+    # Each date appears twice: the first copy is the one that must be kept.
+    n = 40
+    dates = pd.to_datetime(["2008-01-01"] * n + ["2008-01-02"] * n)
+    prices = [100.0 + i for i in range(2 * n)]
+    order = np.random.default_rng(0).permutation(2 * n)
+    raw = pd.DataFrame({"Date": dates[order], "Close": [prices[i] for i in order]})
+
+    expected = raw.drop_duplicates("Date", keep="first").set_index("Date")["Close"]
+    cleaned, _, dups = clean_series(raw)
+
+    assert dups == 2 * n - 2
+    assert cleaned.set_index("Date")["Close"].equals(expected.sort_index())
 
 
 def test_clean_drops_non_positive_and_duplicate_dates() -> None:
