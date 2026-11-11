@@ -27,6 +27,7 @@ from stress_engine.portfolio import (
     export_descriptive_statistics,
     summarize_return_series,
 )
+from stress_engine.visualization import plot_monte_carlo_drawdown_surface
 from stress_engine.volatility import compute_ewma_volatility, fit_gjr_garch
 
 # =====================================================================
@@ -250,6 +251,17 @@ def test_monte_carlo_is_seed_reproducible(tmp_path) -> None:
     )
     pd.testing.assert_frame_equal(df_a, df_b)
     assert np.array_equal(tensor_a, tensor_b)
+
+
+def test_stress_surface_regenerates_missing_results(tmp_path) -> None:
+    # The results parquet is not tracked in git. If it is missing, the plot step must
+    # regenerate it instead of failing, and write everything under tmp_path.
+    out = plot_monte_carlo_drawdown_surface(
+        output_filename=tmp_path / "surface.png",
+        results_path=tmp_path / "synthetic_4d_monte_carlo_results.parquet",
+    )
+    assert out.exists()
+    assert (tmp_path / "synthetic_4d_monte_carlo_results.parquet").exists()
 
 
 def test_monte_carlo_tensor_geometry_and_bounds(tmp_path) -> None:
