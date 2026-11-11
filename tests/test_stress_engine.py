@@ -30,9 +30,11 @@ from stress_engine.portfolio import (
     export_descriptive_statistics,
     summarize_return_series,
 )
+from stress_engine.visualization import plot_monte_carlo_drawdown_surface
 from stress_engine.volatility import compute_ewma_volatility, fit_gjr_garch
 
-# =====================================================================
+# ==============================================================
+
 # Helpers
 # =====================================================================
 
@@ -260,6 +262,16 @@ def test_shock_is_the_stated_simple_return() -> None:
     df_meta, _, _, shock_arr = build_parametric_grid_arrays()
     implied_simple = np.expm1(shock_arr.reshape(-1).astype(np.float64))
     assert np.allclose(implied_simple, df_meta["base_shock"].to_numpy(), atol=1e-6)
+
+def test_stress_surface_regenerates_missing_results(tmp_path) -> None:
+    # The results parquet is not tracked in git. If it is missing, the plot step must
+    # regenerate it instead of failing, and write everything under tmp_path.
+    out = plot_monte_carlo_drawdown_surface(
+        output_filename=tmp_path / "surface.png",
+        results_path=tmp_path / "synthetic_4d_monte_carlo_results.parquet",
+    )
+    assert out.exists()
+    assert (tmp_path / "synthetic_4d_monte_carlo_results.parquet").exists()
 
 
 def test_monte_carlo_tensor_geometry_and_bounds(tmp_path) -> None:

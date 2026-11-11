@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from stress_engine.monte_carlo import build_parametric_grid_arrays
+from stress_engine.monte_carlo import (
+    build_parametric_grid_arrays,
+    run_comprehensive_stress_engine,
+)
 
 if TYPE_CHECKING:
     from stress_engine.portfolio import PortfolioVaR
@@ -159,7 +162,12 @@ def plot_monte_carlo_drawdown_surface(
     Tail tier is averaged out, and the title says so.
     """
     if results is None:
-        results = pd.read_parquet(results_path)
+        results_file = Path(results_path)
+        if results_file.exists():
+            results = pd.read_parquet(results_file)
+        else:
+            # The parquet is derived and not tracked in git. Regenerate it in the same folder.
+            results, _ = run_comprehensive_stress_engine(output_dir=results_file.parent)
 
     required = {"Institution_Key", "Distress_Probability"}
     missing = required - set(results.columns)

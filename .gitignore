@@ -222,3 +222,6 @@ data/raw/*.npy
 
 # gitingest
 gitingest/
+# Parquet tables are derived outputs. Regenerate them with the scripts in the README.
+*.parquet
+
