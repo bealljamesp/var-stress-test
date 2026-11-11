@@ -22,7 +22,7 @@ The engine evaluates historical portfolio drawdowns, calculates dynamic conditio
   * **Kupiec Proportion of Failures (POF) Test ($LR_{\text{uc}}$):** Unconditional coverage testing.
   * **Christoffersen Markov Independence Test ($LR_{\text{ind}}$):** Exception clustering and first-order Markov transition likelihood ratio testing.
   * **Christoffersen Combined Conditional Coverage ($LR_{\text{cc}}$):** Joint evaluation against $\chi^2(2)$.
-  * **Basel Committee (BCBS) Traffic Light System:** Exact binomial cumulative density classification into Green, Yellow, and Red capital penalty zones.
+  * **Basel Committee (BCBS) Traffic Light System:** Green, Yellow, and Red zones and capital multipliers from the BCBS table for 250 observations at 99% VaR. The binomial CDF is reported for the same setting. Other sample sizes or confidence levels raise an error. This project's backtests use 95% VaR, so the traffic light is not applied to them.
 * **Out-of-Sample Alignment:** Every forecast for day $t$ uses only returns through day $t-1$. Tests check this directly, including a test that changing future returns leaves earlier forecasts unchanged.
 * **Modern Python 3.12+ Standards:** Strict type annotations via `numpy.typing.NDArray[np.float64]`, modern type unions (`|`), explicit axis selections, zero-copy `.to_numpy(dtype=np.float64, copy=False)` operations, and a `src/` layout installed with `pip install -e .`.
 
@@ -318,7 +318,7 @@ The tests use synthetic data and do not download prices, so they run offline. Th
 
 * **Expected Shortfall Coherence:** Asserts that Expected Shortfall strictly exceeds Value-at-Risk (ES > VaR) on non-degenerate distributions.
 
-* **BCBS Basel III Boundaries:** Confirms exact regulatory traffic light zone assignments (Green: 0–4 breaches, Yellow: 5–9 breaches, Red: 10+ breaches) and corresponding capital multiplier penalties (3.00 to 4.00).
+* **BCBS Basel III Boundaries:** Confirms regulatory traffic light zone assignments for 250 observations at 99% VaR, and that other settings raise an error (Green: 0–4 breaches, Yellow: 5–9 breaches, Red: 10+ breaches) and corresponding capital multiplier penalties (3.00 to 4.00).
 
 * **Tensor Geometry:** Enforces valid probability bounds [0.0, 1.0], negative peak-to-trough drawdowns, and strict shape preservation across the float32 state space (checked on a small run of (27, 100, 10); the full run is (27, 5000, 90)).
 
