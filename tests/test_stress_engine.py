@@ -21,7 +21,10 @@ from stress_engine.backtest import (
     kupiec_pof_test,
     run_full_var_backtest,
 )
-from stress_engine.monte_carlo import run_comprehensive_stress_engine
+from stress_engine.monte_carlo import (
+    build_parametric_grid_arrays,
+    run_comprehensive_stress_engine,
+)
 from stress_engine.portfolio import (
     PortfolioVaR,
     export_descriptive_statistics,
@@ -264,15 +267,22 @@ def test_stress_surface_regenerates_missing_results(tmp_path) -> None:
     assert (tmp_path / "synthetic_4d_monte_carlo_results.parquet").exists()
 
 
+def test_shock_is_the_stated_simple_return() -> None:
+    # A node labelled -30% must move the price by exactly -30% on day 30
+    df_meta, _, _, shock_arr = build_parametric_grid_arrays()
+    implied_simple = np.expm1(shock_arr.reshape(-1).astype(np.float64))
+    assert np.allclose(implied_simple, df_meta["base_shock"].to_numpy(), atol=1e-6)
+
+
 def test_monte_carlo_tensor_geometry_and_bounds(tmp_path) -> None:
     # Lightweight smoke run: 100 paths, 10 days. Output goes to a temp dir, not data/raw.
     df_results, master_tensor = run_comprehensive_stress_engine(
         n_paths=100, n_days=10, output_dir=tmp_path
     )
 
-    # Assert Cartesian grid geometry: 3 x 3 x 3 x 3 = 81 nodes
-    assert len(df_results) == 81
-    assert master_tensor.shape == (81, 100, 10)
+    # Assert Cartesian grid geometry: 3 vol x 3 tail x 3 shock = 27 nodes
+    assert len(df_results) == 27
+    assert master_tensor.shape == (27, 100, 10)
     assert master_tensor.dtype == np.float32
 
     # Drawdown probabilities must be bounded strictly within [0.0, 1.0]
