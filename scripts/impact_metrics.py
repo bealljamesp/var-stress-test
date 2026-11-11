@@ -5,8 +5,8 @@ For each portfolio and risk model, reports:
   - the dollar amount by which breach-day losses exceeded the model's warning line,
     on a $1,000,000 book (total and average per breach)
 
-Dollar figures are in simple-return terms. Loss = 1 - exp(log return).
-The warning line is the model's VaR threshold, converted the same way.
+Returns are simple returns, so a loss is the negative of the return. The warning line
+is the model's VaR threshold, converted the same way.
 
 Run from the project root (needs network access to download prices):
 
@@ -48,9 +48,12 @@ def portfolios() -> list[PortfolioVaR]:
 def excess_loss_summary(
     realized_log: np.ndarray, threshold_log: np.ndarray
 ) -> tuple[int, float, float]:
-    """Returns (breach count, total excess $ beyond the line, average excess $ per breach)."""
-    loss = 1.0 - np.exp(realized_log)
-    line = 1.0 - np.exp(threshold_log)
+    """Returns (breach count, total excess $ beyond the line, average excess $ per breach).
+
+    Inputs are simple returns (the engine's default). Loss = -return on a $1 book.
+    """
+    loss = -realized_log
+    line = -threshold_log
     breach = realized_log < threshold_log
     excess = (loss - line)[breach] * CAPITAL
     if excess.size == 0:
