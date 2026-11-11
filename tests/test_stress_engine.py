@@ -240,9 +240,23 @@ def test_forecasts_do_not_depend_on_future_returns(method: str) -> None:
 # =====================================================================
 
 
-def test_monte_carlo_tensor_geometry_and_bounds() -> None:
-    # Lightweight smoke run: 100 paths, 10 days
-    df_results, master_tensor = run_comprehensive_stress_engine(n_paths=100, n_days=10)
+def test_monte_carlo_is_seed_reproducible(tmp_path) -> None:
+    # Same seed, same grid: metrics and path tensor must match exactly
+    df_a, tensor_a = run_comprehensive_stress_engine(
+        n_paths=200, n_days=40, random_seed=42, output_dir=tmp_path / "a"
+    )
+    df_b, tensor_b = run_comprehensive_stress_engine(
+        n_paths=200, n_days=40, random_seed=42, output_dir=tmp_path / "b"
+    )
+    pd.testing.assert_frame_equal(df_a, df_b)
+    assert np.array_equal(tensor_a, tensor_b)
+
+
+def test_monte_carlo_tensor_geometry_and_bounds(tmp_path) -> None:
+    # Lightweight smoke run: 100 paths, 10 days. Output goes to a temp dir, not data/raw.
+    df_results, master_tensor = run_comprehensive_stress_engine(
+        n_paths=100, n_days=10, output_dir=tmp_path
+    )
 
     # Assert Cartesian grid geometry: 3 x 3 x 3 x 3 = 81 nodes
     assert len(df_results) == 81
@@ -338,6 +352,45 @@ def test_summary_max_drawdown_uses_compounded_simple_wealth() -> None:
     assert np.isclose(out["Maximum Drawdown"], -0.5)
 
 
+def _two_asset_prices(n: int = 60) -> pd.DataFrame:
+    # Mimics yfinance's multi-ticker layout: columns are (Price field, Ticker)
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    tickers = ["AAA", "BBB"]
+    prices = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.02, size=(n, 2)), axis=0))
+    cols = pd.MultiIndex.from_product([["Adj Close"], tickers])
+    return pd.DataFrame(prices, index=idx, columns=cols)
+
+
+def test_portfolio_return_is_weighted_simple_returns() -> None:
+    # Aggregation identity: portfolio simple return = sum_i w_i * R_i (daily rebalanced)
+    weights = np.array([0.7, 0.3])
+    port = PortfolioVaR(
+        name="Identity", tickers=["AAA", "BBB"], weights=weights,
+        start_date="2020-01-01", end_date="2020-03-31",
+    )
+    port.market_data = _two_asset_prices()
+
+    assert port.return_method == "simple"
+    port.calculate_returns()
+    got = port.compute_portfolio_returns()
+
+    expected = port.market_data["Adj Close"].pct_change().dropna().to_numpy() @ weights
+    assert np.allclose(got, expected, rtol=0, atol=1e-12)
+
+
+def test_portfolio_aggregation_rejects_log_returns() -> None:
+    # Summing log returns across assets is not the portfolio log return, so refuse it
+    port = PortfolioVaR(
+        name="Guard", tickers=["AAA", "BBB"], weights=[0.5, 0.5],
+        start_date="2020-01-01", end_date="2020-03-31",
+    )
+    port.market_data = _two_asset_prices()
+    port.calculate_returns(method="log")
+    with pytest.raises(ValueError, match="requires simple returns"):
+        port.compute_portfolio_returns()
+
+
 def test_export_descriptive_statistics_writes_to_requested_dir(tmp_path) -> None:
     rng = np.random.default_rng(3)
     n = 400
@@ -362,3 +415,27 @@ def test_export_descriptive_statistics_writes_to_requested_dir(tmp_path) -> None
     assert "Annualized Volatility" in df.columns
     assert "FHS Breaches" in df.columns
     assert (tmp_path / "week10_descriptive_summary.csv").exists()
+
+
+def _two_asset_market_data(n: int = 60, seed: int = 7) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    prices = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.02, size=(n, 2)), axis=0))
+    cols = pd.MultiIndex.from_product([["Adj Close"], ["AAA", "BBB"]])
+    return pd.DataFrame(prices, index=idx, columns=cols)
+
+
+def test_input_fingerprint_is_stable_and_detects_price_changes() -> None:
+    port = PortfolioVaR(
+        name="Fingerprint", tickers=["AAA", "BBB"], weights=[0.5, 0.5],
+        start_date="2020-01-01", end_date="2020-03-31",
+    )
+    port.market_data = _two_asset_market_data()
+    fp = port.input_fingerprint()
+    assert fp == port.input_fingerprint()
+
+    # Moving one adjusted price by 0.01% must change the fingerprint
+    changed = _two_asset_market_data()
+    changed.iloc[10, 0] *= 1.0001
+    port.market_data = changed
+    assert port.input_fingerprint() != fp

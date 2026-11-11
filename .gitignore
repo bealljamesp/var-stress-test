@@ -217,8 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Raw data snapshots and numpy arrays
-data/raw/snapshots/
+# Numpy arrays. Price snapshots in data/raw/snapshots/ are committed on purpose: they are the frozen inputs.
 data/raw/*.npy
 
 # gitingest

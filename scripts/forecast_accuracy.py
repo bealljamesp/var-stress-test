@@ -11,7 +11,7 @@ rewards lines that are not breached too often and that are not far from actual
 losses. Scores are averaged over all 502 out-of-sample days and over the
 crisis window (September 2008 to March 2009).
 
-Returns are log returns internally; results are shown in simple percentage terms.
+Returns are simple returns, shown in percentage terms.
 
 Run from the project root (needs network access to download prices):
 
@@ -55,8 +55,8 @@ def pinball_loss(realized: np.ndarray, line: np.ndarray) -> np.ndarray:
     return np.maximum(TAU * gap, (TAU - 1.0) * gap)
 
 
-def simple(log_value: float) -> float:
-    return float(np.expm1(log_value) * 100.0)
+def to_pct(simple_return: float) -> float:
+    return float(simple_return * 100.0)
 
 
 def main() -> None:
@@ -91,10 +91,10 @@ def main() -> None:
         worst = int(np.argmin(realized))
         worst_date = pd.Timestamp(dates[worst]).date()
         print(f"Worst day in the test period: {worst_date}")
-        print(f"  Actual loss that day: {simple(realized[worst]):.2f}%")
+        print(f"  Actual loss that day: {to_pct(realized[worst]):.2f}%")
         for name, line in models.items():
-            predicted = simple(line[worst])
-            gap = abs(simple(realized[worst]) - predicted)
+            predicted = to_pct(line[worst])
+            gap = abs(to_pct(realized[worst]) - predicted)
             print(
                 f"  {name:20s} predicted worst loss {predicted:.2f}%  "
                 f"(off by {gap:.2f} points)"

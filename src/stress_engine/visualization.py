@@ -260,7 +260,7 @@ def plot_var_aggregate_panels(
             label="Daily returns (%)",
         )
         ax.plot(dates, thr * 100.0, color=color, lw=1.6, ls=style, label=label)
-        ax.set_ylabel("Log return (%)", fontsize=10)
+        ax.set_ylabel("Return (%)", fontsize=10)
         ax.legend(
             loc="lower left",
             fontsize=9,
