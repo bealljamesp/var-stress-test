@@ -53,7 +53,7 @@ var-stress-test/
 │   ├── patches/                       # Normalized distressed-entity CSVs and manifest.csv
 │   ├── output/                        # Descriptive summary CSV and VaR diagnostic charts
 │   ├── plots/                         # 4D Monte Carlo stress surface (300 DPI)
-│   └── raw/                           # Raw HTML scrapes, Monte Carlo parquet & tensors
+│   └── raw/                           # Raw HTML scrapes (inputs), price snapshots; parquet & tensors are generated
 └── research/
     └── archive/                       # Deprecated scratchpads & experiments
 ```
@@ -285,6 +285,7 @@ python scripts/compare_gjr_arch.py
 * **Input fingerprint.** Each portfolio's input fingerprint is a hash of its tickers, dates, and adjusted closes. `main.py` prints it, and it is written to `data/output/week10_descriptive_summary.csv`, so any result can be traced to the exact prices that produced it. The return fingerprint hashes the derived return series instead, so it changes with the aggregation method.
 * **Repeat runs.** In the same environment, two consecutive runs of `main.py` produced byte-identical summary CSVs and console output. The Monte Carlo simulation is seeded (`random_seed=42`), and a test checks that repeat runs match.
 * **Refreshing inputs.** Yahoo Finance revises adjusted prices over time, so a refresh can change results. To refresh on purpose, run `python scripts/refresh_snapshot.py`, then rerun `main.py` and commit the new snapshots and regenerated outputs together.
+* **Generated tables.** Parquet files are not tracked in git. If `data/raw/synthetic_4d_monte_carlo_results.parquet` is missing, `main.py` regenerates it. The raw HTML scrapes in `data/raw/` stay tracked because `ingestion.py` rebuilds the distressed-entity patches from them.
 
 ### Verification
 
