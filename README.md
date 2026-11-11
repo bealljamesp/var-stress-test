@@ -244,7 +244,7 @@ pip install -e .
 
 ### Execution
 
-Run the econometric analysis, backtesting suite, and diagnostic chart generator. This downloads price data, so it needs network access:
+Run the econometric analysis, backtesting suite, and diagnostic chart generator. It reads the committed price snapshots in `data/raw/snapshots/`, so no network access is needed:
 
 ```
 python main.py
@@ -263,11 +263,18 @@ To run the standalone 4D Monte Carlo tensor stress simulation:
 python src/stress_engine/monte_carlo.py
 ```
 
-To cross-check the GJR-GARCH fit against the `arch` package (needs network access):
+To cross-check the GJR-GARCH fit against the `arch` package (uses the committed snapshots):
 
 ```
 python scripts/compare_gjr_arch.py
 ```
+
+### Reproducibility
+
+* **Frozen inputs.** `data/raw/snapshots/*.pkl` holds the adjusted prices behind every result. `PortfolioVaR.download_data()` loads a snapshot when one exists and downloads only when it is missing.
+* **Input fingerprint.** Each portfolio's input fingerprint is a hash of its tickers, dates, and adjusted closes. `main.py` prints it, and it is written to `data/output/week10_descriptive_summary.csv`, so any result can be traced to the exact prices that produced it. The return fingerprint hashes the derived return series instead, so it changes with the aggregation method.
+* **Repeat runs.** In the same environment, two consecutive runs of `main.py` produced byte-identical summary CSVs and console output. The Monte Carlo simulation is seeded (`random_seed=42`), and a test checks that repeat runs match.
+* **Refreshing inputs.** Yahoo Finance revises adjusted prices over time, so a refresh can change results. To refresh on purpose, run `python scripts/refresh_snapshot.py`, then rerun `main.py` and commit the new snapshots and regenerated outputs together.
 
 ### Verification
 
@@ -277,7 +284,7 @@ Run the full test suite:
 pytest -v
 ```
 
-The tests use synthetic data and do not download prices, so they run offline.
+The tests use synthetic data and do not download prices, so they run offline. They write only to temporary directories, never to the tracked `data/` folder.
 
 ---
 
